@@ -1,0 +1,85 @@
+# Supabase 資料表設定
+
+若出現 `Could not find the table 'public.schedules'`，請在 Supabase 執行以下 SQL。
+
+## 步驟
+
+1. 前往 [Supabase Dashboard](https://supabase.com/dashboard) → 選擇專案 **hair-salon-scheder**
+2. 左側點 **SQL Editor**
+3. 新增 Query，貼上下方 SQL
+4. 點 **Run**
+
+---
+
+## SQL 內容
+
+```sql
+-- 啟用 UUID 擴充
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 員工表
+CREATE TABLE IF NOT EXISTS employees (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 班表表
+CREATE TABLE IF NOT EXISTS schedules (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  work_date DATE NOT NULL,
+  shift_type TEXT NOT NULL CHECK (shift_type IN ('morning', 'evening', 'full')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(employee_id, work_date, shift_type)
+);
+
+-- 建立索引
+CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(work_date);
+CREATE INDEX IF NOT EXISTS idx_schedules_employee ON schedules(employee_id);
+
+-- 啟用 Row Level Security
+ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
+
+-- RLS 政策（已認證使用者可存取）
+CREATE POLICY "Allow authenticated users to read employees"
+  ON employees FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Allow authenticated users to insert employees"
+  ON employees FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update employees"
+  ON employees FOR UPDATE TO authenticated USING (true);
+
+CREATE POLICY "Allow authenticated users to delete employees"
+  ON employees FOR DELETE TO authenticated USING (true);
+
+CREATE POLICY "Allow authenticated users to read schedules"
+  ON schedules FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Allow authenticated users to insert schedules"
+  ON schedules FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update schedules"
+  ON schedules FOR UPDATE TO authenticated USING (true);
+
+CREATE POLICY "Allow authenticated users to delete schedules"
+  ON schedules FOR DELETE TO authenticated USING (true);
+
+-- 預設員工（僅在表格為空時執行）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM employees) THEN
+    INSERT INTO employees (name) VALUES ('小華'), ('小美'), ('阿明');
+  END IF;
+END $$;
+```
+
+---
+
+若已有 `employees` 表，可跳過建立表的語句，只執行 `schedules` 和 RLS 相關部分。
+若出現「policy already exists」等錯誤，代表該政策已存在，可略過該行。

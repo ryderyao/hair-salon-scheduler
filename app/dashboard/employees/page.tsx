@@ -129,23 +129,23 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20 md:pb-0">
       {/* 頂部導航 */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-bold text-gray-900">洗頭店排班系統</h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              登出
+      <header className="bg-white shadow-sm border-b sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-14 sm:h-16">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+              <LogOut className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">登出</span>
             </Button>
           </div>
         </div>
       </header>
 
       <div className="flex">
-        {/* 側邊導航 */}
-        <aside className="w-64 bg-white shadow-sm min-h-[calc(100vh-64px)]">
+        {/* 側邊導航 - 桌面版 */}
+        <aside className="hidden md:block w-64 bg-white shadow-sm min-h-[calc(100vh-64px)] shrink-0">
           <nav className="p-4 space-y-2">
             {navItems.map((item) => {
               const Icon = item.icon
@@ -169,10 +169,10 @@ export default function EmployeesPage() {
         </aside>
 
         {/* 主內容區 */}
-        <main className="flex-1 p-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           <div className="max-w-4xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">員工管理</h2>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">員工管理</h2>
               <Button onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 新增員工
@@ -228,6 +228,28 @@ export default function EmployeesPage() {
           </div>
         </main>
       </div>
+
+      {/* 底部導航 - 手機版 */}
+      <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
+        <div className="flex justify-around items-center h-16">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex flex-col items-center justify-center flex-1 py-2 transition-colors ${
+                  isActive ? 'text-blue-600' : 'text-gray-500'
+                }`}
+              >
+                <Icon className="h-6 w-6 mb-0.5" />
+                <span className="text-xs font-medium">{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
 
       {/* 新增員工對話框 */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
