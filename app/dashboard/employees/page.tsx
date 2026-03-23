@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw } from 'lucide-react'
 
 interface Employee {
   id: string
@@ -52,8 +52,21 @@ export default function EmployeesPage() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [userReady, setUserReady] = useState(false)
 
   const SALARY_PASSWORD = '8888'
+
+  useEffect(() => {
+    const uid = sessionStorage.getItem('current_user_id')
+    const admin = sessionStorage.getItem('admin_unlocked') === '1' && uid === 'admin'
+    if (!uid || !admin) {
+      sessionStorage.removeItem('current_user_id')
+      sessionStorage.removeItem('admin_unlocked')
+      router.replace('/dashboard/select')
+      return
+    }
+    setUserReady(true)
+  }, [router])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && sessionStorage.getItem('salary_unlocked') === '1') {
@@ -154,9 +167,22 @@ export default function EmployeesPage() {
   }
 
   const handleLogout = async () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
+  }
+
+  const clearCurrentUser = () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
+    router.push('/dashboard/select')
+    router.refresh()
+  }
+
+  if (!userReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
   }
 
   return (
@@ -166,10 +192,16 @@ export default function EmployeesPage() {
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-              <LogOut className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">登出</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">切換使用者</span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">登出</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>

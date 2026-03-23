@@ -32,7 +32,7 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/dashboard')
+    router.push('/dashboard/select')
     router.refresh()
   }
 

@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Calendar, DollarSign, LogOut, Clock } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 
@@ -25,18 +25,24 @@ interface ClockRecord {
   employees: { name: string }
 }
 
-const navItems = [
+const adminNavItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
+]
+const employeeNavItems = [
+  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
+  { href: '/dashboard/clock', label: '打卡', icon: Clock },
 ]
 
 export default function ClockPage() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [userReady, setUserReady] = useState(false)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [todayRecords, setTodayRecords] = useState<ClockRecord[]>([])
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null)
@@ -48,9 +54,23 @@ export default function ClockPage() {
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
   useEffect(() => {
+    const uid = sessionStorage.getItem('current_user_id')
+    const admin = sessionStorage.getItem('admin_unlocked') === '1' && uid === 'admin'
+    setCurrentUserId(uid)
+    setIsAdmin(!!admin)
+    setUserReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!userReady) return
+    if (!currentUserId) router.replace('/dashboard/select')
+  }, [userReady, currentUserId, router])
+
+  useEffect(() => {
+    if (!currentUserId) return
     fetchEmployees()
     fetchTodayRecords()
-  }, [])
+  }, [currentUserId, todayStr])
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000)
@@ -58,30 +78,32 @@ export default function ClockPage() {
   }, [])
 
   const fetchEmployees = async () => {
-    const { data, error } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('is_active', true)
-      .order('name')
-
+    let query = supabase.from('employees').select('*').eq('is_active', true).order('name')
+    if (currentUserId && currentUserId !== 'admin') {
+      query = query.eq('id', currentUserId)
+    }
+    const { data, error } = await query
     if (error) {
       console.error('Error fetching employees:', error)
       return
     }
-    setEmployees(data || [])
+    const list = data || []
+    setEmployees(list)
+    if (list.length === 1 && !selectedEmployee) setSelectedEmployee(list[0].id)
   }
 
   const fetchTodayRecords = async () => {
     setLoading(true)
-    const { data, error } = await supabase
+    let query = supabase
       .from('clock_records')
       .select('*, employees(name)')
       .eq('work_date', todayStr)
       .order('clock_in_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching clock records:', error)
+    if (currentUserId && currentUserId !== 'admin') {
+      query = query.eq('employee_id', currentUserId)
     }
+    const { data, error } = await query
+    if (error) console.error('Error fetching clock records:', error)
     setTodayRecords(data || [])
     setLoading(false)
   }
@@ -170,9 +192,24 @@ export default function ClockPage() {
   }
 
   const handleLogout = async () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
+  }
+
+  const clearCurrentUser = () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
+    router.push('/dashboard/select')
+    router.refresh()
+  }
+
+  const navItems = isAdmin ? adminNavItems : employeeNavItems
+
+  if (!userReady || !currentUserId) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
   }
 
   return (
@@ -181,10 +218,16 @@ export default function ClockPage() {
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-              <LogOut className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">登出</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">切換使用者</span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">登出</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>

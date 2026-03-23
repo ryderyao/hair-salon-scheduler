@@ -1,12 +1,14 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
-import { Users, Calendar, DollarSign, LogOut, Clock } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
+import { useCurrentUser } from '@/lib/useCurrentUser'
 
-const navItems = [
+const adminNavItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
@@ -17,11 +19,29 @@ export default function DashboardPage() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const { currentUserId, isAdmin, ready, clearCurrentUser } = useCurrentUser()
+
+  useEffect(() => {
+    if (!ready) return
+    if (!currentUserId) {
+      router.replace('/dashboard/select')
+      return
+    }
+    if (currentUserId !== 'admin') {
+      router.replace('/dashboard/schedule')
+    }
+  }, [ready, currentUserId, router])
 
   const handleLogout = async () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
+  }
+
+  if (!ready || !currentUserId || currentUserId !== 'admin') {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
   }
 
   return (
@@ -31,10 +51,16 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-              <LogOut className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">登出</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">切換使用者</span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">登出</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -43,7 +69,7 @@ export default function DashboardPage() {
         {/* 側邊導航 - 桌面版 */}
         <aside className="hidden md:block w-64 bg-white shadow-sm min-h-[calc(100vh-64px)] shrink-0">
           <nav className="p-4 space-y-2">
-            {navItems.map((item) => {
+            {adminNavItems.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (
@@ -69,7 +95,7 @@ export default function DashboardPage() {
           <div className="max-w-6xl mx-auto">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">歡迎使用排班系統</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
-              {navItems.map((item) => {
+              {adminNavItems.map((item) => {
                 const Icon = item.icon
                 return (
                   <Link
@@ -97,7 +123,7 @@ export default function DashboardPage() {
       {/* 底部導航 - 手機版 */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
         <div className="flex justify-around items-center h-16">
-          {navItems.map((item) => {
+          {adminNavItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
             return (

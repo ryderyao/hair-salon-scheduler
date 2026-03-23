@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 
@@ -37,11 +37,15 @@ interface Schedule {
   }
 }
 
-const navItems = [
+const adminNavItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
+]
+const employeeNavItems = [
+  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
+  { href: '/dashboard/clock', label: '打卡', icon: Clock },
 ]
 
 const shiftLabels: Record<string, string> = {
@@ -76,6 +80,23 @@ export default function SchedulePage() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [userReady, setUserReady] = useState(false)
+
+  useEffect(() => {
+    const uid = sessionStorage.getItem('current_user_id')
+    const admin = sessionStorage.getItem('admin_unlocked') === '1' && uid === 'admin'
+    setIsAdmin(!!admin)
+    setUserReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!userReady) return
+    const uid = sessionStorage.getItem('current_user_id')
+    if (!uid) router.replace('/dashboard/select')
+  }, [userReady, router])
+
+  const navItems = isAdmin ? adminNavItems : employeeNavItems
   
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -168,6 +189,7 @@ export default function SchedulePage() {
   }
 
   const handleDateClick = (date: Date) => {
+    if (!isAdmin) return
     setSelectedDate(date)
     setSelectedEmployee('')
     setSelectedShift('')
@@ -252,6 +274,17 @@ export default function SchedulePage() {
   const days = getDaysInMonth()
   const weekDays = ['日', '一', '二', '三', '四', '五', '六']
 
+  const clearCurrentUser = () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
+    router.push('/dashboard/select')
+    router.refresh()
+  }
+
+  if (!userReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20 md:pb-0">
       {/* 頂部導航 */}
@@ -259,10 +292,16 @@ export default function SchedulePage() {
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-              <LogOut className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">登出</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">切換使用者</span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">登出</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -363,10 +402,10 @@ export default function SchedulePage() {
                     return (
                       <div
                         key={day.toISOString()}
-                        className={`bg-white p-1 sm:p-2 min-h-[70px] sm:min-h-[100px] cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors ${
+                        className={`bg-white p-1 sm:p-2 min-h-[70px] sm:min-h-[100px] ${isAdmin ? 'cursor-pointer hover:bg-gray-50 active:bg-gray-100' : ''} transition-colors ${
                           isWeekendDay ? 'bg-red-50' : ''
                         }`}
-                        onClick={() => handleDateClick(day)}
+                        onClick={() => isAdmin && handleDateClick(day)}
                       >
                         <div className={`text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
                           isWeekendDay ? 'text-red-600' : 'text-gray-900'
@@ -377,15 +416,15 @@ export default function SchedulePage() {
                           {daySchedules.map((schedule) => (
                             <div
                               key={schedule.id}
-                              className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border ${shiftColors[schedule.shift_type] || 'bg-gray-100'} flex justify-between items-center gap-0.5`}
+                              className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border ${shiftColors[schedule.shift_type] || 'bg-gray-100'} flex justify-between items-center gap-0.5 ${isAdmin ? 'cursor-pointer' : ''}`}
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handleDeleteSchedule(schedule.id)
+                                if (isAdmin) handleDeleteSchedule(schedule.id)
                               }}
                               title={getScheduleDisplay(schedule)}
                             >
                               <span className="truncate">{getScheduleDisplay(schedule)}</span>
-                              <Trash2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 opacity-50 hover:opacity-100 shrink-0" />
+                              {isAdmin && <Trash2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 opacity-50 hover:opacity-100 shrink-0" />}
                             </div>
                           ))}
                         </div>

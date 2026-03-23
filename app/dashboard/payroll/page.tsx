@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, Calendar, DollarSign, LogOut, Clock } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 
@@ -24,6 +24,12 @@ interface PayrollData {
   totalHours: number
   totalAmount: number
   recordCount: number
+}
+
+const shiftHours: Record<string, number> = {
+  morning: 5,
+  evening: 4,
+  full: 12,
 }
 
 const navItems = [
@@ -46,10 +52,25 @@ export default function PayrollPage() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [payrollData, setPayrollData] = useState<PayrollData[]>([])
   const [loading, setLoading] = useState(false)
+  const [dataSource, setDataSource] = useState<'clock' | 'schedule'>('clock')
+  const [userReady, setUserReady] = useState(false)
 
   useEffect(() => {
+    const uid = sessionStorage.getItem('current_user_id')
+    const admin = sessionStorage.getItem('admin_unlocked') === '1' && uid === 'admin'
+    if (!uid || !admin) {
+      sessionStorage.removeItem('current_user_id')
+      sessionStorage.removeItem('admin_unlocked')
+      router.replace('/dashboard/select')
+      return
+    }
+    setUserReady(true)
+  }, [router])
+
+  useEffect(() => {
+    if (!userReady) return
     calculatePayroll()
-  }, [selectedMonth])
+  }, [selectedMonth, userReady])
 
   const calculatePayroll = async () => {
     setLoading(true)
@@ -57,51 +78,62 @@ export default function PayrollPage() {
     const [year, month] = selectedMonth.split('-').map(Number)
     const startDate = new Date(year, month - 1, 1)
     const endDate = endOfMonth(startDate)
+    const startStr = format(startDate, 'yyyy-MM-dd')
+    const endStr = format(endDate, 'yyyy-MM-dd')
 
-    const { data: records, error } = await supabase
+    // 1. 優先使用打卡紀錄
+    const { data: records } = await supabase
       .from('clock_records')
-      .select(`
-        employee_id,
-        clock_in_at,
-        clock_out_at,
-        employees(name, hourly_rate)
-      `)
-      .gte('work_date', format(startDate, 'yyyy-MM-dd'))
-      .lte('work_date', format(endDate, 'yyyy-MM-dd'))
+      .select(`employee_id, clock_in_at, clock_out_at, employees(name, hourly_rate)`)
+      .gte('work_date', startStr)
+      .lte('work_date', endStr)
       .not('clock_out_at', 'is', null)
-
-    if (error) {
-      console.error('Error fetching clock records:', error)
-      setLoading(false)
-      return
-    }
 
     const payrollMap = new Map<string, PayrollData>()
 
-    records?.forEach((rec: { employee_id: string; clock_in_at: string; clock_out_at: string | null; employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] }) => {
-      if (!rec.clock_out_at) return
-      const employeeId = rec.employee_id
-      const emp = rec.employees
-      const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
-      const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
-      const hours = calcHoursFromClock(rec.clock_in_at, rec.clock_out_at)
+    if (records && records.length > 0) {
+      setDataSource('clock')
+      records.forEach((rec: { employee_id: string; clock_in_at: string; clock_out_at: string | null; employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] }) => {
+        if (!rec.clock_out_at) return
+        const employeeId = rec.employee_id
+        const emp = rec.employees
+        const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
+        const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
+        const hours = calcHoursFromClock(rec.clock_in_at, rec.clock_out_at)
 
-      if (!payrollMap.has(employeeId)) {
-        payrollMap.set(employeeId, {
-          employeeId,
-          employeeName,
-          hourlyRate,
-          totalHours: 0,
-          totalAmount: 0,
-          recordCount: 0,
-        })
-      }
+        if (!payrollMap.has(employeeId)) {
+          payrollMap.set(employeeId, { employeeId, employeeName, hourlyRate, totalHours: 0, totalAmount: 0, recordCount: 0 })
+        }
+        const data = payrollMap.get(employeeId)!
+        data.totalHours += hours
+        data.recordCount++
+        data.totalAmount = data.totalHours * data.hourlyRate
+      })
+    } else {
+      // 2. 若無打卡紀錄，改依排班表（保留既有資料）
+      setDataSource('schedule')
+      const { data: schedules } = await supabase
+        .from('schedules')
+        .select(`employee_id, shift_type, hours, employees(name, hourly_rate)`)
+        .gte('work_date', startStr)
+        .lte('work_date', endStr)
 
-      const data = payrollMap.get(employeeId)!
-      data.totalHours += hours
-      data.recordCount++
-      data.totalAmount = data.totalHours * data.hourlyRate
-    })
+      schedules?.forEach((s: { employee_id: string; shift_type: string; hours?: number; employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] }) => {
+        const employeeId = s.employee_id
+        const emp = s.employees
+        const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
+        const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
+        const hours = s.shift_type === 'custom' && typeof s.hours === 'number' ? s.hours : (shiftHours[s.shift_type] ?? 0)
+
+        if (!payrollMap.has(employeeId)) {
+          payrollMap.set(employeeId, { employeeId, employeeName, hourlyRate, totalHours: 0, totalAmount: 0, recordCount: 0 })
+        }
+        const data = payrollMap.get(employeeId)!
+        data.totalHours += hours
+        data.recordCount++
+        data.totalAmount = data.totalHours * data.hourlyRate
+      })
+    }
 
     setPayrollData(Array.from(payrollMap.values()))
     setLoading(false)
@@ -111,7 +143,7 @@ export default function PayrollPage() {
     const options = []
     const currentDate = new Date()
     
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 24; i++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
       const value = format(date, 'yyyy-MM')
       const label = format(date, 'yyyy年MM月', { locale: zhTW })
@@ -122,12 +154,25 @@ export default function PayrollPage() {
   }
 
   const handleLogout = async () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
   }
 
+  const clearCurrentUser = () => {
+    sessionStorage.removeItem('current_user_id')
+    sessionStorage.removeItem('admin_unlocked')
+    router.push('/dashboard/select')
+    router.refresh()
+  }
+
   const totalAmount = payrollData.reduce((sum, data) => sum + data.totalAmount, 0)
+
+  if (!userReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20 md:pb-0">
@@ -136,10 +181,16 @@ export default function PayrollPage() {
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-              <LogOut className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">登出</span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">切換使用者</span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">登出</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -190,14 +241,21 @@ export default function PayrollPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>薪資明細</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>薪資明細</span>
+                  {!loading && payrollData.length > 0 && (
+                    <span className="text-sm font-normal text-gray-500">
+                      {dataSource === 'clock' ? '依打卡' : '依排班'}
+                    </span>
+                  )}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {loading ? (
                   <div className="text-center py-8 text-gray-500">載入中...</div>
                 ) : payrollData.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    {selectedMonth} 尚無打卡資料
+                    {selectedMonth} 尚無排班或打卡資料
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -241,7 +299,9 @@ export default function PayrollPage() {
                     <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                       <h4 className="font-medium text-blue-900 mb-2">計算說明</h4>
                       <ul className="text-sm text-blue-800 space-y-1">
-                        <li>• 薪資依據實際打卡紀錄計算（上班～下班時數）</li>
+                        <li>• <strong>依打卡</strong>：該月份有打卡紀錄時，以實際上/下班時數計算</li>
+                        <li>• <strong>依排班</strong>：該月份無打卡時，改以排班表（早/晚/全日/自訂時段）計算</li>
+                        <li>• 可選擇過去 24 個月進行每月分析</li>
                         <li>• 時薪：每位員工可設定 $200～$250（於員工管理設定）</li>
                       </ul>
                     </div>
