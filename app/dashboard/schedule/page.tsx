@@ -73,6 +73,8 @@ export default function SchedulePage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedEmployee, setSelectedEmployee] = useState('')
   const [selectedShift, setSelectedShift] = useState('')
+  const [addScheduleLoading, setAddScheduleLoading] = useState(false)
+  const [addScheduleError, setAddScheduleError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchEmployees()
@@ -148,11 +150,15 @@ export default function SchedulePage() {
     setSelectedDate(date)
     setSelectedEmployee('')
     setSelectedShift('')
+    setAddScheduleError(null)
     setIsDialogOpen(true)
   }
 
   const handleAddSchedule = async () => {
     if (!selectedDate || !selectedEmployee || !selectedShift) return
+
+    setAddScheduleError(null)
+    setAddScheduleLoading(true)
 
     const { error } = await supabase
       .from('schedules')
@@ -162,7 +168,11 @@ export default function SchedulePage() {
         shift_type: selectedShift,
       }])
 
+    setAddScheduleLoading(false)
+
     if (error) {
+      const msg = error.message || '新增排班失敗，請稍後再試'
+      setAddScheduleError(msg)
       console.error('Error adding schedule:', error)
       return
     }
@@ -350,11 +360,23 @@ export default function SchedulePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {addScheduleError && (
+              <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                {addScheduleError}
+                <br />
+                <span className="text-xs">提示：請確認已登入，且 Supabase 環境變數已正確設定。</span>
+              </div>
+            )}
+            {employees.length === 0 && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                尚無在職員工。請先到「員工管理」新增員工後再排班。
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">選擇員工</label>
-              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+              <Select value={selectedEmployee} onValueChange={setSelectedEmployee} disabled={employees.length === 0}>
                 <SelectTrigger>
-                  <SelectValue placeholder="請選擇員工" />
+                  <SelectValue placeholder={employees.length === 0 ? '請先新增員工' : '請選擇員工'} />
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map((employee) => (
@@ -382,11 +404,11 @@ export default function SchedulePage() {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={addScheduleLoading}>
               取消
             </Button>
-            <Button onClick={handleAddSchedule} disabled={!selectedEmployee || !selectedShift}>
-              新增
+            <Button onClick={handleAddSchedule} disabled={!selectedEmployee || !selectedShift || addScheduleLoading}>
+              {addScheduleLoading ? '新增中...' : '新增'}
             </Button>
           </DialogFooter>
         </DialogContent>

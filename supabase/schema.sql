@@ -77,9 +77,10 @@ CREATE POLICY "Allow authenticated users to update schedules"
 CREATE POLICY "Allow authenticated users to delete schedules"
   ON schedules FOR DELETE TO authenticated USING (true);
 
--- 插入預設員工（範例資料）
-INSERT INTO employees (name) VALUES 
-  ('小華'),
-  ('小美'),
-  ('阿明')
-ON CONFLICT DO NOTHING;
+-- 插入預設員工（僅在表格為空時執行）
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM employees) THEN
+    INSERT INTO employees (name) VALUES ('小華'), ('小美'), ('阿明');
+  END IF;
+END $$;
