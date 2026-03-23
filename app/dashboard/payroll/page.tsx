@@ -88,9 +88,10 @@ export default function PayrollPage() {
     // 計算每位員工的薪資
     const payrollMap = new Map<string, PayrollData>()
 
-    schedules?.forEach((schedule: Schedule) => {
+    schedules?.forEach((schedule) => {
       const employeeId = schedule.employee_id
-      const employeeName = schedule.employees.name
+      const emp = schedule.employees as { name: string } | { name: string }[] | null
+      const employeeName = Array.isArray(emp) ? emp[0]?.name : emp?.name ?? ''
       const shiftType = schedule.shift_type
       const hours = shiftHours[shiftType]
 
