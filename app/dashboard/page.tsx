@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
-import { Users, Calendar, DollarSign, LogOut } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
+  { href: '/dashboard/clock', label: '打卡', icon: Clock },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
 ]
 

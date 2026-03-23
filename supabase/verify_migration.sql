@@ -1,4 +1,4 @@
--- 驗證 migration_salary_custom_shifts 是否已執行
+-- 驗證 migrations 是否已執行
 -- 在 Supabase SQL Editor 執行此腳本，若全部顯示 ✓ 即表示 migration 已完成
 
 SELECT 
@@ -9,4 +9,6 @@ SELECT
   CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schedules' AND column_name='end_time')
     THEN '✓' ELSE '✗' END AS "schedules.end_time",
   CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='schedules' AND column_name='hours')
-    THEN '✓' ELSE '✗' END AS "schedules.hours";
+    THEN '✓' ELSE '✗' END AS "schedules.hours",
+  CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='clock_records')
+    THEN '✓' ELSE '✗' END AS "clock_records";

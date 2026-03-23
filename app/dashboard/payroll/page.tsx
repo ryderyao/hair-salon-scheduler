@@ -13,42 +13,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, Calendar, DollarSign, LogOut } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
-
-interface Schedule {
-  employee_id: string
-  shift_type: 'morning' | 'evening' | 'full' | 'custom'
-  hours?: number
-  employees: {
-    name: string
-    hourly_rate: number
-  }
-}
 
 interface PayrollData {
   employeeId: string
   employeeName: string
   hourlyRate: number
-  morningShifts: number
-  eveningShifts: number
-  fullShifts: number
-  customHours: number
   totalHours: number
   totalAmount: number
+  recordCount: number
 }
 
 const navItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
+  { href: '/dashboard/clock', label: '打卡', icon: Clock },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
 ]
 
-const shiftHours: Record<string, number> = {
-  morning: 5,
-  evening: 4,
-  full: 12,
+function calcHoursFromClock(clockIn: string, clockOut: string): number {
+  const ms = new Date(clockOut).getTime() - new Date(clockIn).getTime()
+  return Math.round((ms / (1000 * 60 * 60)) * 10) / 10
 }
 
 export default function PayrollPage() {
@@ -71,61 +58,48 @@ export default function PayrollPage() {
     const startDate = new Date(year, month - 1, 1)
     const endDate = endOfMonth(startDate)
 
-    const { data: schedules, error } = await supabase
-      .from('schedules')
+    const { data: records, error } = await supabase
+      .from('clock_records')
       .select(`
         employee_id,
-        shift_type,
-        hours,
+        clock_in_at,
+        clock_out_at,
         employees(name, hourly_rate)
       `)
       .gte('work_date', format(startDate, 'yyyy-MM-dd'))
       .lte('work_date', format(endDate, 'yyyy-MM-dd'))
+      .not('clock_out_at', 'is', null)
 
     if (error) {
-      console.error('Error fetching schedules:', error)
+      console.error('Error fetching clock records:', error)
       setLoading(false)
       return
     }
 
-    // 計算每位員工的薪資
     const payrollMap = new Map<string, PayrollData>()
 
-    schedules?.forEach((schedule) => {
-      const employeeId = schedule.employee_id
-      const emp = schedule.employees as { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] | null
-      const employeeName = Array.isArray(emp) ? emp[0]?.name : emp?.name ?? ''
+    records?.forEach((rec: { employee_id: string; clock_in_at: string; clock_out_at: string | null; employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] }) => {
+      if (!rec.clock_out_at) return
+      const employeeId = rec.employee_id
+      const emp = rec.employees
+      const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
       const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
-      const shiftType = schedule.shift_type
-      const hours = shiftType === 'custom' && typeof schedule.hours === 'number' ? schedule.hours : (shiftHours[shiftType] ?? 0)
+      const hours = calcHoursFromClock(rec.clock_in_at, rec.clock_out_at)
 
       if (!payrollMap.has(employeeId)) {
         payrollMap.set(employeeId, {
           employeeId,
           employeeName,
           hourlyRate,
-          morningShifts: 0,
-          eveningShifts: 0,
-          fullShifts: 0,
-          customHours: 0,
           totalHours: 0,
           totalAmount: 0,
+          recordCount: 0,
         })
       }
 
       const data = payrollMap.get(employeeId)!
-      
-      if (shiftType === 'morning') {
-        data.morningShifts++
-      } else if (shiftType === 'evening') {
-        data.eveningShifts++
-      } else if (shiftType === 'full') {
-        data.fullShifts++
-      } else if (shiftType === 'custom') {
-        data.customHours += hours
-      }
-      
       data.totalHours += hours
+      data.recordCount++
       data.totalAmount = data.totalHours * data.hourlyRate
     })
 
@@ -223,7 +197,7 @@ export default function PayrollPage() {
                   <div className="text-center py-8 text-gray-500">載入中...</div>
                 ) : payrollData.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    {selectedMonth} 尚無排班資料
+                    {selectedMonth} 尚無打卡資料
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -233,10 +207,7 @@ export default function PayrollPage() {
                           <tr className="border-b">
                             <th className="text-left py-3 px-4 font-medium text-gray-900">員工姓名</th>
                             <th className="text-center py-3 px-4 font-medium text-gray-900">時薪</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">早班</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">晚班</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">全日班</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">自訂時段(hr)</th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-900">出勤天數</th>
                             <th className="text-center py-3 px-4 font-medium text-gray-900">總時數</th>
                             <th className="text-right py-3 px-4 font-medium text-gray-900">總金額</th>
                           </tr>
@@ -246,10 +217,7 @@ export default function PayrollPage() {
                             <tr key={data.employeeId} className="border-b last:border-0">
                               <td className="py-3 px-4 font-medium">{data.employeeName}</td>
                               <td className="text-center py-3 px-4 text-gray-600">${data.hourlyRate}</td>
-                              <td className="text-center py-3 px-4 text-gray-600">{data.morningShifts}</td>
-                              <td className="text-center py-3 px-4 text-gray-600">{data.eveningShifts}</td>
-                              <td className="text-center py-3 px-4 text-gray-600">{data.fullShifts}</td>
-                              <td className="text-center py-3 px-4 text-gray-600">{data.customHours > 0 ? data.customHours : '-'}</td>
+                              <td className="text-center py-3 px-4 text-gray-600">{data.recordCount}</td>
                               <td className="text-center py-3 px-4 font-medium">{data.totalHours} 小時</td>
                               <td className="text-right py-3 px-4 font-bold text-green-600">
                                 ${data.totalAmount.toLocaleString()}
@@ -259,7 +227,7 @@ export default function PayrollPage() {
                         </tbody>
                         <tfoot>
                           <tr className="bg-gray-50">
-                            <td colSpan={7} className="text-right py-4 px-4 font-bold text-gray-900">
+                            <td colSpan={4} className="text-right py-4 px-4 font-bold text-gray-900">
                               總計
                             </td>
                             <td className="text-right py-4 px-4 font-bold text-green-600 text-lg">
@@ -273,10 +241,7 @@ export default function PayrollPage() {
                     <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                       <h4 className="font-medium text-blue-900 mb-2">計算說明</h4>
                       <ul className="text-sm text-blue-800 space-y-1">
-                        <li>• 平日早班：12:00-17:00，共 5 小時</li>
-                        <li>• 平日晚班：19:00-23:00，共 4 小時</li>
-                        <li>• 假日全日班：11:30-23:30，共 12 小時</li>
-                        <li>• 自訂時段：依實際排班時數計算</li>
+                        <li>• 薪資依據實際打卡紀錄計算（上班～下班時數）</li>
                         <li>• 時薪：每位員工可設定 $200～$250（於員工管理設定）</li>
                       </ul>
                     </div>

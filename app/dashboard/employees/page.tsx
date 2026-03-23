@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock } from 'lucide-react'
 
 interface Employee {
   id: string
@@ -30,6 +30,7 @@ interface Employee {
 const navItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
+  { href: '/dashboard/clock', label: '打卡', icon: Clock },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
 ]
 
@@ -47,6 +48,31 @@ export default function EmployeesPage() {
   const [editName, setEditName] = useState('')
   const [editHourlyRate, setEditHourlyRate] = useState(200)
   const [newEmployeeHourlyRate, setNewEmployeeHourlyRate] = useState(200)
+  const [salaryUnlocked, setSalaryUnlocked] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+
+  const SALARY_PASSWORD = '8888'
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && sessionStorage.getItem('salary_unlocked') === '1') {
+      setSalaryUnlocked(true)
+    }
+  }, [])
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError(null)
+    if (passwordInput === SALARY_PASSWORD) {
+      setSalaryUnlocked(true)
+      sessionStorage.setItem('salary_unlocked', '1')
+      setShowPasswordDialog(false)
+      setPasswordInput('')
+    } else {
+      setPasswordError('密碼錯誤')
+    }
+  }
 
   useEffect(() => {
     fetchEmployees()
@@ -203,7 +229,18 @@ export default function EmployeesPage() {
                         <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900">{employee.name}</span>
-                            <span className="text-sm text-gray-500">${(employee.hourly_rate ?? 200)}/hr</span>
+                            {salaryUnlocked ? (
+                              <span className="text-sm text-gray-500">${(employee.hourly_rate ?? 200)}/hr</span>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-6 px-2 text-gray-500"
+                                onClick={() => setShowPasswordDialog(true)}
+                              >
+                                設定薪資
+                              </Button>
+                            )}
                           </div>
                           {employee.is_active ? (
                             <Badge variant="default">啟用中</Badge>
@@ -278,18 +315,29 @@ export default function EmployeesPage() {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="hourlyRate">時薪 ($/小時)</Label>
-                <Input
-                  id="hourlyRate"
-                  type="number"
-                  min={200}
-                  max={250}
-                  value={newEmployeeHourlyRate}
-                  onChange={(e) => setNewEmployeeHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
-                />
-                <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
-              </div>
+              {salaryUnlocked ? (
+                <div className="space-y-2">
+                  <Label htmlFor="hourlyRate">時薪 ($/小時)</Label>
+                  <Input
+                    id="hourlyRate"
+                    type="number"
+                    min={200}
+                    max={250}
+                    value={newEmployeeHourlyRate}
+                    onChange={(e) => setNewEmployeeHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
+                  />
+                  <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setShowPasswordDialog(true)}
+                >
+                  設定薪資（需密碼）
+                </Button>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
@@ -320,24 +368,63 @@ export default function EmployeesPage() {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="editHourlyRate">時薪 ($/小時)</Label>
-                <Input
-                  id="editHourlyRate"
-                  type="number"
-                  min={200}
-                  max={250}
-                  value={editHourlyRate}
-                  onChange={(e) => setEditHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
-                />
-                <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
-              </div>
+              {salaryUnlocked ? (
+                <div className="space-y-2">
+                  <Label htmlFor="editHourlyRate">時薪 ($/小時)</Label>
+                  <Input
+                    id="editHourlyRate"
+                    type="number"
+                    min={200}
+                    max={250}
+                    value={editHourlyRate}
+                    onChange={(e) => setEditHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
+                  />
+                  <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setShowPasswordDialog(true)}
+                >
+                  設定薪資（需密碼）
+                </Button>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                 取消
               </Button>
               <Button type="submit">儲存</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 薪資密碼對話框 */}
+      <Dialog open={showPasswordDialog} onOpenChange={(open) => { setShowPasswordDialog(open); if (!open) { setPasswordInput(''); setPasswordError(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>輸入密碼</DialogTitle>
+            <DialogDescription>請輸入密碼以檢視或設定薪資</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePasswordSubmit}>
+            <div className="space-y-4 py-4">
+              <Input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="請輸入密碼"
+                autoFocus
+              />
+              {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowPasswordDialog(false)}>
+                取消
+              </Button>
+              <Button type="submit">確認</Button>
             </DialogFooter>
           </form>
         </DialogContent>
