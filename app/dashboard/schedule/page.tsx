@@ -364,15 +364,19 @@ export default function SchedulePage() {
                 <div className="flex flex-wrap gap-3 sm:gap-6 text-xs sm:text-sm">
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 sm:w-4 sm:h-4 bg-yellow-100 border border-yellow-200 rounded shrink-0"></div>
-                    <span>早班 (平日)</span>
+                    <span>早班 (平日) 12:00-17:00</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 sm:w-4 sm:h-4 bg-blue-100 border border-blue-200 rounded shrink-0"></div>
-                    <span>晚班 (平日)</span>
+                    <span>晚班 (平日) 19:00-23:00</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-100 border border-green-200 rounded shrink-0"></div>
-                    <span>全日班 (假日)</span>
+                    <span>全日班 (假日) 11:30-23:30</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 sm:w-4 sm:h-4 bg-purple-100 border border-purple-200 rounded shrink-0"></div>
+                    <span>自訂時段</span>
                   </div>
                 </div>
               </CardHeader>
