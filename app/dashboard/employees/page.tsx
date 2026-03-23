@@ -23,6 +23,7 @@ interface Employee {
   id: string
   name: string
   is_active: boolean
+  hourly_rate?: number
   created_at: string
 }
 
@@ -44,6 +45,8 @@ export default function EmployeesPage() {
   const [newEmployeeName, setNewEmployeeName] = useState('')
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [editName, setEditName] = useState('')
+  const [editHourlyRate, setEditHourlyRate] = useState(200)
+  const [newEmployeeHourlyRate, setNewEmployeeHourlyRate] = useState(200)
 
   useEffect(() => {
     fetchEmployees()
@@ -70,7 +73,7 @@ export default function EmployeesPage() {
 
     const { error } = await supabase
       .from('employees')
-      .insert([{ name: newEmployeeName.trim() }])
+      .insert([{ name: newEmployeeName.trim(), hourly_rate: newEmployeeHourlyRate }])
 
     if (error) {
       console.error('Error adding employee:', error)
@@ -78,6 +81,7 @@ export default function EmployeesPage() {
     }
 
     setNewEmployeeName('')
+    setNewEmployeeHourlyRate(200)
     setIsAddDialogOpen(false)
     fetchEmployees()
   }
@@ -88,7 +92,7 @@ export default function EmployeesPage() {
 
     const { error } = await supabase
       .from('employees')
-      .update({ name: editName.trim() })
+      .update({ name: editName.trim(), hourly_rate: editHourlyRate })
       .eq('id', editingEmployee.id)
 
     if (error) {
@@ -119,6 +123,7 @@ export default function EmployeesPage() {
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee)
     setEditName(employee.name)
+    setEditHourlyRate(employee.hourly_rate ?? 200)
     setIsEditDialogOpen(true)
   }
 
@@ -195,8 +200,11 @@ export default function EmployeesPage() {
                         key={employee.id}
                         className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
                       >
-                        <div className="flex items-center space-x-4">
-                          <span className="font-medium text-gray-900">{employee.name}</span>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{employee.name}</span>
+                            <span className="text-sm text-gray-500">${(employee.hourly_rate ?? 200)}/hr</span>
+                          </div>
                           {employee.is_active ? (
                             <Badge variant="default">啟用中</Badge>
                           ) : (
@@ -270,6 +278,18 @@ export default function EmployeesPage() {
                   required
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="hourlyRate">時薪 ($/小時)</Label>
+                <Input
+                  id="hourlyRate"
+                  type="number"
+                  min={200}
+                  max={250}
+                  value={newEmployeeHourlyRate}
+                  onChange={(e) => setNewEmployeeHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
+                />
+                <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
@@ -299,6 +319,18 @@ export default function EmployeesPage() {
                   placeholder="請輸入員工姓名"
                   required
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editHourlyRate">時薪 ($/小時)</Label>
+                <Input
+                  id="editHourlyRate"
+                  type="number"
+                  min={200}
+                  max={250}
+                  value={editHourlyRate}
+                  onChange={(e) => setEditHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
+                />
+                <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
               </div>
             </div>
             <DialogFooter>

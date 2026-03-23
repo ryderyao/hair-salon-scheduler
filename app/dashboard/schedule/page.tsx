@@ -28,7 +28,10 @@ interface Schedule {
   id: string
   employee_id: string
   work_date: string
-  shift_type: 'morning' | 'evening' | 'full'
+  shift_type: 'morning' | 'evening' | 'full' | 'custom'
+  start_time?: string
+  end_time?: string
+  hours?: number
   employees: {
     name: string
   }
@@ -44,12 +47,28 @@ const shiftLabels: Record<string, string> = {
   morning: '早班',
   evening: '晚班',
   full: '全日班',
+  custom: '自訂',
 }
 
 const shiftColors: Record<string, string> = {
   morning: 'bg-yellow-100 text-yellow-800 border-yellow-200',
   evening: 'bg-blue-100 text-blue-800 border-blue-200',
   full: 'bg-green-100 text-green-800 border-green-200',
+  custom: 'bg-purple-100 text-purple-800 border-purple-200',
+}
+
+// 解析時間字串 "HH:mm" 為分鐘數
+function parseTimeToMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+// 計算兩時間之間的小時數
+function calcHours(start: string, end: string): number {
+  const startM = parseTimeToMinutes(start)
+  let endM = parseTimeToMinutes(end)
+  if (endM <= startM) endM += 24 * 60
+  return Math.round((endM - startM) / 6) / 10 // 精確到 0.1 小時
 }
 
 export default function SchedulePage() {
@@ -66,6 +85,8 @@ export default function SchedulePage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedEmployee, setSelectedEmployee] = useState('')
   const [selectedShift, setSelectedShift] = useState('')
+  const [customStartTime, setCustomStartTime] = useState('12:00')
+  const [customEndTime, setCustomEndTime] = useState('13:00')
   const [addScheduleLoading, setAddScheduleLoading] = useState(false)
   const [addScheduleError, setAddScheduleError] = useState<string | null>(null)
 
@@ -128,27 +149,57 @@ export default function SchedulePage() {
     )
   }
 
-  const getAvailableShifts = (date: Date) => {
-    if (isWeekend(date)) {
-      return [{ value: 'full', label: '全日班 11:30-23:30 (12hr)' }]
-    } else {
-      return [
-        { value: 'morning', label: '早班 12:00-17:00 (5hr)' },
-        { value: 'evening', label: '晚班 19:00-23:00 (4hr)' },
-      ]
+  const getScheduleDisplay = (schedule: Schedule) => {
+    if (schedule.shift_type === 'custom' && schedule.start_time && schedule.end_time) {
+      return `${schedule.employees.name} ${schedule.start_time}-${schedule.end_time}`
     }
+    return `${schedule.employees.name} ${shiftLabels[schedule.shift_type] || schedule.shift_type}`
+  }
+
+  const getAvailableShifts = (date: Date) => {
+    const preset = isWeekend(date)
+      ? [{ value: 'full', label: '全日班 11:30-23:30 (12hr)' }]
+      : [
+          { value: 'morning', label: '早班 12:00-17:00 (5hr)' },
+          { value: 'evening', label: '晚班 19:00-23:00 (4hr)' },
+        ]
+    return [...preset, { value: 'custom', label: '自訂時段' }]
   }
 
   const handleDateClick = (date: Date) => {
     setSelectedDate(date)
     setSelectedEmployee('')
     setSelectedShift('')
+    setCustomStartTime('12:00')
+    setCustomEndTime('13:00')
     setAddScheduleError(null)
     setIsDialogOpen(true)
   }
 
   const handleAddSchedule = async () => {
     if (!selectedDate || !selectedEmployee || !selectedShift) return
+
+    let startTime: string
+    let endTime: string
+    let hours: number
+
+    if (selectedShift === 'custom') {
+      const hrs = calcHours(customStartTime, customEndTime)
+      if (hrs <= 0) {
+        setAddScheduleError('結束時間必須晚於開始時間')
+        return
+      }
+      startTime = customStartTime
+      endTime = customEndTime
+      hours = hrs
+    } else {
+      const preset = selectedShift === 'morning' ? { start: '12:00', end: '17:00', hours: 5 }
+        : selectedShift === 'evening' ? { start: '19:00', end: '23:00', hours: 4 }
+        : { start: '11:30', end: '23:30', hours: 12 }
+      startTime = preset.start
+      endTime = preset.end
+      hours = preset.hours
+    }
 
     setAddScheduleError(null)
     setAddScheduleLoading(true)
@@ -159,6 +210,9 @@ export default function SchedulePage() {
         employee_id: selectedEmployee,
         work_date: format(selectedDate, 'yyyy-MM-dd'),
         shift_type: selectedShift,
+        start_time: startTime,
+        end_time: endTime,
+        hours,
       }])
 
     setAddScheduleLoading(false)
@@ -322,13 +376,14 @@ export default function SchedulePage() {
                           {daySchedules.map((schedule) => (
                             <div
                               key={schedule.id}
-                              className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border ${shiftColors[schedule.shift_type]} flex justify-between items-center gap-0.5`}
+                              className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border ${shiftColors[schedule.shift_type] || 'bg-gray-100'} flex justify-between items-center gap-0.5`}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleDeleteSchedule(schedule.id)
                               }}
+                              title={getScheduleDisplay(schedule)}
                             >
-                              <span className="truncate">{schedule.employees.name}</span>
+                              <span className="truncate">{getScheduleDisplay(schedule)}</span>
                               <Trash2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 opacity-50 hover:opacity-100 shrink-0" />
                             </div>
                           ))}
@@ -423,7 +478,7 @@ export default function SchedulePage() {
                     onClick={() => setSelectedShift(shift.value)}
                     className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all touch-manipulation whitespace-nowrap ${
                       selectedShift === shift.value
-                        ? 'ring-2 ring-offset-2 ' + (shift.value === 'morning' ? 'bg-yellow-100 text-yellow-900 ring-yellow-300' : shift.value === 'evening' ? 'bg-blue-100 text-blue-900 ring-blue-300' : 'bg-green-100 text-green-900 ring-green-300')
+                        ? 'ring-2 ring-offset-2 ' + (shift.value === 'morning' ? 'bg-yellow-100 text-yellow-900 ring-yellow-300' : shift.value === 'evening' ? 'bg-blue-100 text-blue-900 ring-blue-300' : shift.value === 'full' ? 'bg-green-100 text-green-900 ring-green-300' : 'bg-purple-100 text-purple-900 ring-purple-300')
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                     }`}
                   >
@@ -431,6 +486,39 @@ export default function SchedulePage() {
                   </button>
                 ))}
               </div>
+
+              {/* 自訂時段 - 開始/結束時間 */}
+              {selectedShift === 'custom' && (
+                <div className="mt-3 p-3 bg-purple-50 rounded-lg space-y-3 border border-purple-100">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="custom-start-time" className="text-xs font-medium text-gray-600 block mb-1">開始時間</label>
+                      <input
+                        id="custom-start-time"
+                        type="time"
+                        value={customStartTime}
+                        onChange={(e) => setCustomStartTime(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md text-sm"
+                        aria-label="自訂時段開始時間"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="custom-end-time" className="text-xs font-medium text-gray-600 block mb-1">結束時間</label>
+                      <input
+                        id="custom-end-time"
+                        type="time"
+                        value={customEndTime}
+                        onChange={(e) => setCustomEndTime(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-md text-sm"
+                        aria-label="自訂時段結束時間"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    時數：{calcHours(customStartTime, customEndTime) > 0 ? calcHours(customStartTime, customEndTime).toFixed(1) : '—'} 小時
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter className="flex-col-reverse sm:flex-row gap-2">

@@ -19,18 +19,22 @@ import { zhTW } from 'date-fns/locale'
 
 interface Schedule {
   employee_id: string
-  shift_type: 'morning' | 'evening' | 'full'
+  shift_type: 'morning' | 'evening' | 'full' | 'custom'
+  hours?: number
   employees: {
     name: string
+    hourly_rate: number
   }
 }
 
 interface PayrollData {
   employeeId: string
   employeeName: string
+  hourlyRate: number
   morningShifts: number
   eveningShifts: number
   fullShifts: number
+  customHours: number
   totalHours: number
   totalAmount: number
 }
@@ -40,8 +44,6 @@ const navItems = [
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
 ]
-
-const HOURLY_RATE = 200
 
 const shiftHours: Record<string, number> = {
   morning: 5,
@@ -74,7 +76,8 @@ export default function PayrollPage() {
       .select(`
         employee_id,
         shift_type,
-        employees(name)
+        hours,
+        employees(name, hourly_rate)
       `)
       .gte('work_date', format(startDate, 'yyyy-MM-dd'))
       .lte('work_date', format(endDate, 'yyyy-MM-dd'))
@@ -90,18 +93,21 @@ export default function PayrollPage() {
 
     schedules?.forEach((schedule) => {
       const employeeId = schedule.employee_id
-      const emp = schedule.employees as { name: string } | { name: string }[] | null
+      const emp = schedule.employees as { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] | null
       const employeeName = Array.isArray(emp) ? emp[0]?.name : emp?.name ?? ''
+      const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
       const shiftType = schedule.shift_type
-      const hours = shiftHours[shiftType]
+      const hours = shiftType === 'custom' && typeof schedule.hours === 'number' ? schedule.hours : (shiftHours[shiftType] ?? 0)
 
       if (!payrollMap.has(employeeId)) {
         payrollMap.set(employeeId, {
           employeeId,
           employeeName,
+          hourlyRate,
           morningShifts: 0,
           eveningShifts: 0,
           fullShifts: 0,
+          customHours: 0,
           totalHours: 0,
           totalAmount: 0,
         })
@@ -115,10 +121,12 @@ export default function PayrollPage() {
         data.eveningShifts++
       } else if (shiftType === 'full') {
         data.fullShifts++
+      } else if (shiftType === 'custom') {
+        data.customHours += hours
       }
       
       data.totalHours += hours
-      data.totalAmount = data.totalHours * HOURLY_RATE
+      data.totalAmount = data.totalHours * data.hourlyRate
     })
 
     setPayrollData(Array.from(payrollMap.values()))
@@ -224,9 +232,11 @@ export default function PayrollPage() {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-3 px-4 font-medium text-gray-900">員工姓名</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">早班 (5hr)</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">晚班 (4hr)</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">全日班 (12hr)</th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-900">時薪</th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-900">早班</th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-900">晚班</th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-900">全日班</th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-900">自訂時段(hr)</th>
                             <th className="text-center py-3 px-4 font-medium text-gray-900">總時數</th>
                             <th className="text-right py-3 px-4 font-medium text-gray-900">總金額</th>
                           </tr>
@@ -235,9 +245,11 @@ export default function PayrollPage() {
                           {payrollData.map((data) => (
                             <tr key={data.employeeId} className="border-b last:border-0">
                               <td className="py-3 px-4 font-medium">{data.employeeName}</td>
+                              <td className="text-center py-3 px-4 text-gray-600">${data.hourlyRate}</td>
                               <td className="text-center py-3 px-4 text-gray-600">{data.morningShifts}</td>
                               <td className="text-center py-3 px-4 text-gray-600">{data.eveningShifts}</td>
                               <td className="text-center py-3 px-4 text-gray-600">{data.fullShifts}</td>
+                              <td className="text-center py-3 px-4 text-gray-600">{data.customHours > 0 ? data.customHours : '-'}</td>
                               <td className="text-center py-3 px-4 font-medium">{data.totalHours} 小時</td>
                               <td className="text-right py-3 px-4 font-bold text-green-600">
                                 ${data.totalAmount.toLocaleString()}
@@ -247,7 +259,7 @@ export default function PayrollPage() {
                         </tbody>
                         <tfoot>
                           <tr className="bg-gray-50">
-                            <td colSpan={5} className="text-right py-4 px-4 font-bold text-gray-900">
+                            <td colSpan={7} className="text-right py-4 px-4 font-bold text-gray-900">
                               總計
                             </td>
                             <td className="text-right py-4 px-4 font-bold text-green-600 text-lg">
@@ -264,7 +276,8 @@ export default function PayrollPage() {
                         <li>• 平日早班：12:00-17:00，共 5 小時</li>
                         <li>• 平日晚班：19:00-23:00，共 4 小時</li>
                         <li>• 假日全日班：11:30-23:30，共 12 小時</li>
-                        <li>• 時薪：$200/小時</li>
+                        <li>• 自訂時段：依實際排班時數計算</li>
+                        <li>• 時薪：每位員工可設定 $200～$250（於員工管理設定）</li>
                       </ul>
                     </div>
                   </div>
