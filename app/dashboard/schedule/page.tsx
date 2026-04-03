@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
+import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { zhTW } from 'date-fns/locale'
 
 interface Employee {
@@ -266,6 +267,7 @@ export default function SchedulePage() {
   }
 
   const handleLogout = async () => {
+    clearAdminSessionKeys()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
@@ -275,8 +277,7 @@ export default function SchedulePage() {
   const weekDays = ['日', '一', '二', '三', '四', '五', '六']
 
   const clearCurrentUser = () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     router.push('/dashboard/select')
     router.refresh()
   }

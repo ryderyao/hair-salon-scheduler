@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
+import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 
@@ -59,8 +60,7 @@ export default function PayrollPage() {
     const uid = sessionStorage.getItem('current_user_id')
     const admin = sessionStorage.getItem('admin_unlocked') === '1' && uid === 'admin'
     if (!uid || !admin) {
-      sessionStorage.removeItem('current_user_id')
-      sessionStorage.removeItem('admin_unlocked')
+      clearAdminSessionKeys()
       router.replace('/dashboard/select')
       return
     }
@@ -154,16 +154,14 @@ export default function PayrollPage() {
   }
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
   }
 
   const clearCurrentUser = () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     router.push('/dashboard/select')
     router.refresh()
   }
@@ -302,7 +300,9 @@ export default function PayrollPage() {
                         <li>• <strong>依打卡</strong>：該月份有打卡紀錄時，以實際上/下班時數計算</li>
                         <li>• <strong>依排班</strong>：該月份無打卡時，改以排班表（早/晚/全日/自訂時段）計算</li>
                         <li>• 可選擇過去 24 個月進行每月分析</li>
-                        <li>• 時薪：每位員工可設定 $200～$250（於員工管理設定）</li>
+                        <li>
+                          • 時薪：每位員工可在員工管理設定 $200～$250 之間任一整數（例如 210、215、218）
+                        </li>
                       </ul>
                     </div>
                   </div>

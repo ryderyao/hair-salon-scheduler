@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw } from 'lucide-react'
+import { clearAdminSessionKeys } from '@/lib/adminSession'
 
 interface Employee {
   id: string
@@ -34,6 +35,21 @@ const navItems = [
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
 ]
 
+/** 與 supabase/migration_salary_custom_shifts.sql 的 CHECK 一致 */
+const HOURLY_RATE_MIN = 200
+const HOURLY_RATE_MAX = 250
+
+function clampHourlyRate(n: number): number {
+  return Math.min(HOURLY_RATE_MAX, Math.max(HOURLY_RATE_MIN, Math.round(n)))
+}
+
+/** 表單送出不為空時使用；blur 時也會正規化 */
+function parseHourlyRateInput(raw: string): number {
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return HOURLY_RATE_MIN
+  return clampHourlyRate(parseInt(digits, 10))
+}
+
 export default function EmployeesPage() {
   const pathname = usePathname()
   const router = useRouter()
@@ -46,8 +62,8 @@ export default function EmployeesPage() {
   const [newEmployeeName, setNewEmployeeName] = useState('')
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [editName, setEditName] = useState('')
-  const [editHourlyRate, setEditHourlyRate] = useState(200)
-  const [newEmployeeHourlyRate, setNewEmployeeHourlyRate] = useState(200)
+  const [editHourlyRateInput, setEditHourlyRateInput] = useState('200')
+  const [newEmployeeHourlyRateInput, setNewEmployeeHourlyRateInput] = useState('200')
   const [salaryUnlocked, setSalaryUnlocked] = useState(false)
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [passwordInput, setPasswordInput] = useState('')
@@ -60,8 +76,7 @@ export default function EmployeesPage() {
     const uid = sessionStorage.getItem('current_user_id')
     const admin = sessionStorage.getItem('admin_unlocked') === '1' && uid === 'admin'
     if (!uid || !admin) {
-      sessionStorage.removeItem('current_user_id')
-      sessionStorage.removeItem('admin_unlocked')
+      clearAdminSessionKeys()
       router.replace('/dashboard/select')
       return
     }
@@ -110,9 +125,10 @@ export default function EmployeesPage() {
     e.preventDefault()
     if (!newEmployeeName.trim()) return
 
+    const rate = parseHourlyRateInput(newEmployeeHourlyRateInput)
     const { error } = await supabase
       .from('employees')
-      .insert([{ name: newEmployeeName.trim(), hourly_rate: newEmployeeHourlyRate }])
+      .insert([{ name: newEmployeeName.trim(), hourly_rate: rate }])
 
     if (error) {
       console.error('Error adding employee:', error)
@@ -120,7 +136,7 @@ export default function EmployeesPage() {
     }
 
     setNewEmployeeName('')
-    setNewEmployeeHourlyRate(200)
+    setNewEmployeeHourlyRateInput('200')
     setIsAddDialogOpen(false)
     fetchEmployees()
   }
@@ -129,9 +145,10 @@ export default function EmployeesPage() {
     e.preventDefault()
     if (!editingEmployee || !editName.trim()) return
 
+    const rate = parseHourlyRateInput(editHourlyRateInput)
     const { error } = await supabase
       .from('employees')
-      .update({ name: editName.trim(), hourly_rate: editHourlyRate })
+      .update({ name: editName.trim(), hourly_rate: rate })
       .eq('id', editingEmployee.id)
 
     if (error) {
@@ -162,21 +179,23 @@ export default function EmployeesPage() {
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee)
     setEditName(employee.name)
-    setEditHourlyRate(employee.hourly_rate ?? 200)
+    setEditHourlyRateInput(String(employee.hourly_rate ?? HOURLY_RATE_MIN))
     setIsEditDialogOpen(true)
   }
 
+  const normalizeHourlyRateField = (raw: string, setter: (s: string) => void) => {
+    setter(String(parseHourlyRateInput(raw || `${HOURLY_RATE_MIN}`)))
+  }
+
   const handleLogout = async () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
   }
 
   const clearCurrentUser = () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     router.push('/dashboard/select')
     router.refresh()
   }
@@ -236,7 +255,12 @@ export default function EmployeesPage() {
           <div className="max-w-4xl mx-auto">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900">員工管理</h2>
-              <Button onClick={() => setIsAddDialogOpen(true)}>
+              <Button
+                onClick={() => {
+                  setNewEmployeeHourlyRateInput('200')
+                  setIsAddDialogOpen(true)
+                }}
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 新增員工
               </Button>
@@ -352,13 +376,22 @@ export default function EmployeesPage() {
                   <Label htmlFor="hourlyRate">時薪 ($/小時)</Label>
                   <Input
                     id="hourlyRate"
-                    type="number"
-                    min={200}
-                    max={250}
-                    value={newEmployeeHourlyRate}
-                    onChange={(e) => setNewEmployeeHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="例如 210、215、218"
+                    value={newEmployeeHourlyRateInput}
+                    onChange={(e) => {
+                      const d = e.target.value.replace(/\D/g, '').slice(0, 3)
+                      setNewEmployeeHourlyRateInput(d)
+                    }}
+                    onBlur={() =>
+                      normalizeHourlyRateField(newEmployeeHourlyRateInput, setNewEmployeeHourlyRateInput)
+                    }
                   />
-                  <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
+                  <p className="text-xs text-gray-500">
+                    可輸入 {HOURLY_RATE_MIN}～{HOURLY_RATE_MAX} 任一整數
+                  </p>
                 </div>
               ) : (
                 <Button
@@ -405,13 +438,22 @@ export default function EmployeesPage() {
                   <Label htmlFor="editHourlyRate">時薪 ($/小時)</Label>
                   <Input
                     id="editHourlyRate"
-                    type="number"
-                    min={200}
-                    max={250}
-                    value={editHourlyRate}
-                    onChange={(e) => setEditHourlyRate(Math.min(250, Math.max(200, parseInt(e.target.value) || 200)))}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="例如 210、215、218"
+                    value={editHourlyRateInput}
+                    onChange={(e) => {
+                      const d = e.target.value.replace(/\D/g, '').slice(0, 3)
+                      setEditHourlyRateInput(d)
+                    }}
+                    onBlur={() =>
+                      normalizeHourlyRateField(editHourlyRateInput, setEditHourlyRateInput)
+                    }
                   />
-                  <p className="text-xs text-gray-500">範圍：200 ~ 250</p>
+                  <p className="text-xs text-gray-500">
+                    可輸入 {HOURLY_RATE_MIN}～{HOURLY_RATE_MAX} 任一整數
+                  </p>
                 </div>
               ) : (
                 <Button

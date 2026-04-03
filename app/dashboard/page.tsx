@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
 import { useCurrentUser } from '@/lib/useCurrentUser'
+import { clearAdminSessionKeys } from '@/lib/adminSession'
 
 const adminNavItems = [
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
@@ -33,8 +34,7 @@ export default function DashboardPage() {
   }, [ready, currentUserId, router])
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()

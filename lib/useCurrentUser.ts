@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { clearAdminSessionKeys } from '@/lib/adminSession'
 
 const STORAGE_USER = 'current_user_id'
 const STORAGE_ADMIN = 'admin_unlocked'
@@ -28,8 +29,7 @@ export function useCurrentUser() {
   }, [])
 
   const clearCurrentUser = useCallback(() => {
-    sessionStorage.removeItem(STORAGE_USER)
-    sessionStorage.removeItem(STORAGE_ADMIN)
+    clearAdminSessionKeys()
     setCurrentUserId(null)
     setIsAdmin(false)
     router.push('/dashboard/select')

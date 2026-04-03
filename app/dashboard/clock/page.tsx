@@ -6,8 +6,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AdminClockRecordsPanel } from '@/components/AdminClockRecordsPanel'
 import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
+import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { zhTW } from 'date-fns/locale'
 
 interface Employee {
@@ -35,6 +38,166 @@ const employeeNavItems = [
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
 ]
+
+type ClockTodaySectionProps = {
+  currentTime: Date
+  employees: Employee[]
+  todayRecords: ClockRecord[]
+  loading: boolean
+  selectedEmployee: string | null
+  setSelectedEmployee: (id: string | null) => void
+  getRecordForEmployee: (empId: string) => ClockRecord | undefined
+  canClockIn: (empId: string) => boolean
+  canClockOut: (empId: string) => boolean
+  handleClockIn: () => void
+  handleClockOut: () => void
+  punchLoading: boolean
+  message: { type: 'success' | 'error'; text: string } | null
+}
+
+function ClockTodaySection({
+  currentTime,
+  employees,
+  todayRecords,
+  loading,
+  selectedEmployee,
+  setSelectedEmployee,
+  getRecordForEmployee,
+  canClockIn,
+  canClockOut,
+  handleClockIn,
+  handleClockOut,
+  punchLoading,
+  message,
+}: ClockTodaySectionProps) {
+  return (
+    <>
+      <div className="mb-6 p-4 bg-white rounded-lg shadow-sm border text-center">
+        <p className="text-sm text-gray-500 mb-1">
+          {format(currentTime, 'yyyy年M月d日 EEEE', { locale: zhTW })}
+        </p>
+        <p className="text-3xl sm:text-4xl font-mono font-bold text-gray-900">
+          {format(currentTime, 'HH:mm:ss')}
+        </p>
+      </div>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>選擇人員</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {employees.map((emp) => {
+              const rec = getRecordForEmployee(emp.id)
+              const isSelected = selectedEmployee === emp.id
+              const status =
+                !rec ? '未打卡' : rec.clock_out_at ? '已完成' : '上班中'
+              return (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => setSelectedEmployee(emp.id)}
+                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all touch-manipulation ${
+                    isSelected
+                      ? 'ring-2 ring-offset-2 ring-blue-500 bg-blue-50 text-blue-900'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <span className="block">{emp.name}</span>
+                  <span className="text-xs text-gray-500">{status}</span>
+                </button>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>打卡</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Button
+              size="lg"
+              className="flex-1 bg-green-600 hover:bg-green-700"
+              onClick={handleClockIn}
+              disabled={
+                punchLoading ||
+                !selectedEmployee ||
+                !canClockIn(selectedEmployee!)
+              }
+            >
+              上班打卡
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="flex-1 border-amber-500 text-amber-700 hover:bg-amber-50"
+              onClick={handleClockOut}
+              disabled={
+                punchLoading ||
+                !selectedEmployee ||
+                !canClockOut(selectedEmployee!)
+              }
+            >
+              下班打卡
+            </Button>
+          </div>
+          {selectedEmployee && (
+            <p className="mt-3 text-sm text-gray-500">
+              已選擇：{employees.find((e) => e.id === selectedEmployee)?.name}
+            </p>
+          )}
+          {message && (
+            <p
+              className={`mt-3 text-sm ${
+                message.type === 'success' ? 'text-green-600' : 'text-red-600'
+              }`}
+            >
+              {message.text}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>今日打卡紀錄</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-6 text-gray-500">載入中...</div>
+          ) : todayRecords.length === 0 ? (
+            <div className="text-center py-6 text-gray-500">尚無打卡紀錄</div>
+          ) : (
+            <div className="space-y-2">
+              {todayRecords.map((rec) => {
+                const emp = rec.employees as { name: string }
+                return (
+                  <div
+                    key={rec.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  >
+                    <span className="font-medium">{emp.name}</span>
+                    <div className="text-sm text-gray-600">
+                      {format(new Date(rec.clock_in_at), 'HH:mm')}
+                      {rec.clock_out_at ? (
+                        <>～{format(new Date(rec.clock_out_at), 'HH:mm')}</>
+                      ) : (
+                        <span className="text-amber-600 ml-1">(上班中)</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  )
+}
 
 export default function ClockPage() {
   const pathname = usePathname()
@@ -192,16 +355,14 @@ export default function ClockPage() {
   }
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
   }
 
   const clearCurrentUser = () => {
-    sessionStorage.removeItem('current_user_id')
-    sessionStorage.removeItem('admin_unlocked')
+    clearAdminSessionKeys()
     router.push('/dashboard/select')
     router.refresh()
   }
@@ -258,137 +419,50 @@ export default function ClockPage() {
           <div className="max-w-4xl mx-auto">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">打卡</h2>
 
-            {/* 即時時間 */}
-            <div className="mb-6 p-4 bg-white rounded-lg shadow-sm border text-center">
-              <p className="text-sm text-gray-500 mb-1">
-                {format(currentTime, 'yyyy年M月d日 EEEE', { locale: zhTW })}
-              </p>
-              <p className="text-3xl sm:text-4xl font-mono font-bold text-gray-900">
-                {format(currentTime, 'HH:mm:ss')}
-              </p>
-            </div>
-
-            {/* 選擇人員 - 點選按鈕 */}
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>選擇人員</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {employees.map((emp) => {
-                    const rec = getRecordForEmployee(emp.id)
-                    const isSelected = selectedEmployee === emp.id
-                    const status =
-                      !rec
-                        ? '未打卡'
-                        : rec.clock_out_at
-                        ? '已完成'
-                        : '上班中'
-                    return (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        onClick={() => setSelectedEmployee(emp.id)}
-                        className={`px-4 py-3 rounded-lg text-sm font-medium transition-all touch-manipulation ${
-                          isSelected
-                            ? 'ring-2 ring-offset-2 ring-blue-500 bg-blue-50 text-blue-900'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <span className="block">{emp.name}</span>
-                        <span className="text-xs text-gray-500">{status}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 上班 / 下班按鈕 */}
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>打卡</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Button
-                    size="lg"
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                    onClick={handleClockIn}
-                    disabled={
-                      punchLoading ||
-                      !selectedEmployee ||
-                      !canClockIn(selectedEmployee!)
-                    }
-                  >
-                    上班打卡
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="flex-1 border-amber-500 text-amber-700 hover:bg-amber-50"
-                    onClick={handleClockOut}
-                    disabled={
-                      punchLoading ||
-                      !selectedEmployee ||
-                      !canClockOut(selectedEmployee!)
-                    }
-                  >
-                    下班打卡
-                  </Button>
-                </div>
-                {selectedEmployee && (
-                  <p className="mt-3 text-sm text-gray-500">
-                    已選擇：{employees.find((e) => e.id === selectedEmployee)?.name}
-                  </p>
-                )}
-                {message && (
-                  <p
-                    className={`mt-3 text-sm ${
-                      message.type === 'success' ? 'text-green-600' : 'text-red-600'
-                    }`}
-                  >
-                    {message.text}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* 今日打卡紀錄 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>今日打卡紀錄</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="text-center py-6 text-gray-500">載入中...</div>
-                ) : todayRecords.length === 0 ? (
-                  <div className="text-center py-6 text-gray-500">尚無打卡紀錄</div>
-                ) : (
-                  <div className="space-y-2">
-                    {todayRecords.map((rec) => {
-                      const emp = rec.employees as { name: string }
-                      return (
-                        <div
-                          key={rec.id}
-                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                        >
-                          <span className="font-medium">{emp.name}</span>
-                          <div className="text-sm text-gray-600">
-                            {format(new Date(rec.clock_in_at), 'HH:mm')}
-                            {rec.clock_out_at ? (
-                              <>～{format(new Date(rec.clock_out_at), 'HH:mm')}</>
-                            ) : (
-                              <span className="text-amber-600 ml-1">(上班中)</span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {isAdmin ? (
+              <Tabs defaultValue="today" className="w-full">
+                <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+                  <TabsTrigger value="today">今日打卡</TabsTrigger>
+                  <TabsTrigger value="records">紀錄與補登</TabsTrigger>
+                </TabsList>
+                <TabsContent value="today" className="space-y-6 mt-0">
+                  <ClockTodaySection
+                    currentTime={currentTime}
+                    employees={employees}
+                    todayRecords={todayRecords}
+                    loading={loading}
+                    selectedEmployee={selectedEmployee}
+                    setSelectedEmployee={setSelectedEmployee}
+                    getRecordForEmployee={getRecordForEmployee}
+                    canClockIn={canClockIn}
+                    canClockOut={canClockOut}
+                    handleClockIn={handleClockIn}
+                    handleClockOut={handleClockOut}
+                    punchLoading={punchLoading}
+                    message={message}
+                  />
+                </TabsContent>
+                <TabsContent value="records" className="mt-0">
+                  <AdminClockRecordsPanel supabase={supabase} onRecordsChanged={fetchTodayRecords} />
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <ClockTodaySection
+                currentTime={currentTime}
+                employees={employees}
+                todayRecords={todayRecords}
+                loading={loading}
+                selectedEmployee={selectedEmployee}
+                setSelectedEmployee={setSelectedEmployee}
+                getRecordForEmployee={getRecordForEmployee}
+                canClockIn={canClockIn}
+                canClockOut={canClockOut}
+                handleClockIn={handleClockIn}
+                handleClockOut={handleClockOut}
+                punchLoading={punchLoading}
+                message={message}
+              />
+            )}
           </div>
         </main>
       </div>

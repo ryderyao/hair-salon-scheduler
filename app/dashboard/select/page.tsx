@@ -7,6 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Shield, Users, LogOut } from 'lucide-react'
+import {
+  ADMIN_SESSION_EXPIRES_AT_KEY,
+  setAdminSessionExpiryFromNow,
+} from '@/lib/adminSession'
 
 const ADMIN_PASSWORD = '8888'
 
@@ -36,6 +40,8 @@ export default function SelectUserPage() {
   const handleSelectEmployee = (employeeId: string) => {
     sessionStorage.setItem('current_user_id', employeeId)
     sessionStorage.removeItem('admin_unlocked')
+    sessionStorage.removeItem('salary_unlocked')
+    sessionStorage.removeItem(ADMIN_SESSION_EXPIRES_AT_KEY)
     router.push('/dashboard/schedule')
     router.refresh()
   }
@@ -51,6 +57,7 @@ export default function SelectUserPage() {
       sessionStorage.setItem('current_user_id', 'admin')
       sessionStorage.setItem('admin_unlocked', '1')
       sessionStorage.setItem('salary_unlocked', '1')
+      setAdminSessionExpiryFromNow()
       router.push('/dashboard')
       router.refresh()
     } else {
