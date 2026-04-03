@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminClockRecordsPanel } from '@/components/AdminClockRecordsPanel'
+import { EmployeeMyClockRecordsPanel } from '@/components/EmployeeMyClockRecordsPanel'
 import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
@@ -213,6 +214,8 @@ export default function ClockPage() {
   const [punchLoading, setPunchLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
+  /** 員工「我的打卡紀錄」在今日打卡成功後刷新 */
+  const [myRecordsRefreshKey, setMyRecordsRefreshKey] = useState(0)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -322,6 +325,7 @@ export default function ClockPage() {
     setSelectedEmployee(null)
     showMessage('success', '上班打卡成功')
     fetchTodayRecords()
+    setMyRecordsRefreshKey((k) => k + 1)
   }
 
   const handleClockOut = async () => {
@@ -352,6 +356,7 @@ export default function ClockPage() {
     setSelectedEmployee(null)
     showMessage('success', '下班打卡成功')
     fetchTodayRecords()
+    setMyRecordsRefreshKey((k) => k + 1)
   }
 
   const handleLogout = async () => {
@@ -447,21 +452,36 @@ export default function ClockPage() {
                 </TabsContent>
               </Tabs>
             ) : (
-              <ClockTodaySection
-                currentTime={currentTime}
-                employees={employees}
-                todayRecords={todayRecords}
-                loading={loading}
-                selectedEmployee={selectedEmployee}
-                setSelectedEmployee={setSelectedEmployee}
-                getRecordForEmployee={getRecordForEmployee}
-                canClockIn={canClockIn}
-                canClockOut={canClockOut}
-                handleClockIn={handleClockIn}
-                handleClockOut={handleClockOut}
-                punchLoading={punchLoading}
-                message={message}
-              />
+              <Tabs defaultValue="today" className="w-full">
+                <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+                  <TabsTrigger value="today">今日打卡</TabsTrigger>
+                  <TabsTrigger value="my-records">我的打卡紀錄</TabsTrigger>
+                </TabsList>
+                <TabsContent value="today" className="space-y-6 mt-0">
+                  <ClockTodaySection
+                    currentTime={currentTime}
+                    employees={employees}
+                    todayRecords={todayRecords}
+                    loading={loading}
+                    selectedEmployee={selectedEmployee}
+                    setSelectedEmployee={setSelectedEmployee}
+                    getRecordForEmployee={getRecordForEmployee}
+                    canClockIn={canClockIn}
+                    canClockOut={canClockOut}
+                    handleClockIn={handleClockIn}
+                    handleClockOut={handleClockOut}
+                    punchLoading={punchLoading}
+                    message={message}
+                  />
+                </TabsContent>
+                <TabsContent value="my-records" className="mt-0">
+                  <EmployeeMyClockRecordsPanel
+                    supabase={supabase}
+                    employeeId={currentUserId}
+                    refreshKey={myRecordsRefreshKey}
+                  />
+                </TabsContent>
+              </Tabs>
             )}
           </div>
         </main>
