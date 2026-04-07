@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw, Wallet } from 'lucide-react'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 
 interface Employee {
@@ -33,6 +33,7 @@ const navItems = [
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
+  { href: '/dashboard/finance', label: '收支', icon: Wallet },
 ]
 
 /** 與 supabase/migration_salary_custom_shifts.sql 的 CHECK 一致 */
@@ -205,7 +206,7 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 md:pb-0">
+    <div className="min-h-screen bg-gray-50 pb-24 md:pb-0">
       {/* 頂部導航 */}
       <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
@@ -332,7 +333,7 @@ export default function EmployeesPage() {
 
       {/* 底部導航 - 手機版 */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
-        <div className="flex justify-around items-center h-16">
+        <div className="flex justify-around items-stretch h-16 overflow-x-auto">
           {navItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
@@ -340,12 +341,14 @@ export default function EmployeesPage() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center justify-center flex-1 py-2 transition-colors ${
+                className={`flex flex-col items-center justify-center min-w-[4.5rem] flex-1 py-1.5 transition-colors ${
                   isActive ? 'text-blue-600' : 'text-gray-500'
                 }`}
               >
-                <Icon className="h-6 w-6 mb-0.5" />
-                <span className="text-xs font-medium">{item.label}</span>
+                <Icon className="h-5 w-5 mb-0.5 shrink-0" />
+                <span className="text-[10px] font-medium leading-tight text-center px-0.5">
+                  {item.label}
+                </span>
               </Link>
             )
           })}

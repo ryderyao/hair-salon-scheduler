@@ -83,3 +83,11 @@ END $$;
 
 若已有 `employees` 表，可跳過建立表的語句，只執行 `schedules` 和 RLS 相關部分。
 若出現「policy already exists」等錯誤，代表該政策已存在，可略過該行。
+
+---
+
+## 收支記帳（`finance_entries`）
+
+若後台「收支」頁面出現資料表不存在的錯誤，請在 SQL Editor 執行專案內的 **`supabase/migration_finance_entries.sql`**。
+
+須已存在 `update_updated_at_column` 函數（若已跑過 `schema.sql` 或 `migration_clock_records.sql` 通常已有）。

@@ -162,7 +162,7 @@ export default function SelectUserPage() {
               <Shield className="h-4 w-4" />
               管理者
             </CardTitle>
-            <CardDescription>完整後台（排班、打卡、員工、薪資）</CardDescription>
+            <CardDescription>完整後台（排班、打卡、員工、薪資、收支）</CardDescription>
           </CardHeader>
           <CardContent>
             <Button className="w-full" onClick={handleSelectManager}>
