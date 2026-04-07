@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
@@ -34,6 +34,7 @@ const shiftHours: Record<string, number> = {
 }
 
 const navItems = [
+  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
@@ -44,6 +45,13 @@ const navItems = [
 function calcHoursFromClock(clockIn: string, clockOut: string): number {
   const ms = new Date(clockOut).getTime() - new Date(clockIn).getTime()
   return Math.round((ms / (1000 * 60 * 60)) * 10) / 10
+}
+
+/** 匯總後避免浮點誤差；僅供畫面用，不寫入資料庫 */
+function normalizePayrollRow(d: PayrollData): PayrollData {
+  const totalHours = Math.round(d.totalHours * 10) / 10
+  const totalAmount = Math.round(totalHours * d.hourlyRate)
+  return { ...d, totalHours, totalAmount }
 }
 
 export default function PayrollPage() {
@@ -136,7 +144,7 @@ export default function PayrollPage() {
       })
     }
 
-    setPayrollData(Array.from(payrollMap.values()))
+    setPayrollData(Array.from(payrollMap.values()).map(normalizePayrollRow))
     setLoading(false)
   }
 
@@ -275,7 +283,9 @@ export default function PayrollPage() {
                               <td className="py-3 px-4 font-medium">{data.employeeName}</td>
                               <td className="text-center py-3 px-4 text-gray-600">${data.hourlyRate}</td>
                               <td className="text-center py-3 px-4 text-gray-600">{data.recordCount}</td>
-                              <td className="text-center py-3 px-4 font-medium">{data.totalHours} 小時</td>
+                              <td className="text-center py-3 px-4 font-medium">
+                                {data.totalHours.toFixed(1)} 小時
+                              </td>
                               <td className="text-right py-3 px-4 font-bold text-green-600">
                                 ${data.totalAmount.toLocaleString()}
                               </td>

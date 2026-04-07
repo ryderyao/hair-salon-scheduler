@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw, Wallet } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { zhTW } from 'date-fns/locale'
@@ -39,6 +39,7 @@ interface Schedule {
 }
 
 const adminNavItems = [
+  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },

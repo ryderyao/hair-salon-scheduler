@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminClockRecordsPanel } from '@/components/AdminClockRecordsPanel'
 import { EmployeeMyClockRecordsPanel } from '@/components/EmployeeMyClockRecordsPanel'
-import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
 import { format } from 'date-fns'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { zhTW } from 'date-fns/locale'
@@ -30,6 +30,7 @@ interface ClockRecord {
 }
 
 const adminNavItems = [
+  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },

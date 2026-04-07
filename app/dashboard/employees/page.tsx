@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw, Wallet } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 
 interface Employee {
@@ -29,6 +29,7 @@ interface Employee {
 }
 
 const navItems = [
+  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },

@@ -5,11 +5,13 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
-import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet } from 'lucide-react'
+import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
 import { useCurrentUser } from '@/lib/useCurrentUser'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
+import { ShareholderDashboard } from '@/components/ShareholderDashboard'
 
 const adminNavItems = [
+  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
@@ -94,29 +96,11 @@ export default function DashboardPage() {
         {/* 主內容區 */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">歡迎使用排班系統</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
-              {adminNavItems.map((item) => {
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="bg-white p-6 rounded-lg shadow-sm border hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className="p-3 bg-blue-50 rounded-lg">
-                        <Icon className="h-6 w-6 text-blue-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{item.label}</h3>
-                        <p className="text-sm text-gray-500">點擊進入</p>
-                      </div>
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">歡迎使用排班系統</h2>
+            <p className="text-sm text-gray-600 mb-6">
+              股東／管理總覽：以下為收支儀表板。日常作業請使用左側選單。
+            </p>
+            <ShareholderDashboard />
           </div>
         </main>
       </div>

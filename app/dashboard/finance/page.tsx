@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Users, Calendar, DollarSign, Clock, RefreshCw, Wallet, Trash2 } from 'lucide-react'
+import { Users, Calendar, DollarSign, Clock, RefreshCw, Wallet, Trash2, LayoutDashboard } from 'lucide-react'
 import { clearAdminSessionKeys, FINANCE_EDIT_UNLOCKED_KEY } from '@/lib/adminSession'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
@@ -41,6 +41,7 @@ import {
 } from '@/lib/financeCategories'
 
 const navItems = [
+  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: '員工管理', icon: Users },
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
@@ -88,6 +89,8 @@ export default function FinancePage() {
   const [showFinanceUnlockDialog, setShowFinanceUnlockDialog] = useState(false)
   const [financeUnlockInput, setFinanceUnlockInput] = useState('')
   const [financeUnlockError, setFinanceUnlockError] = useState<string | null>(null)
+  const [financeActiveTab, setFinanceActiveTab] = useState<'add' | 'report'>('report')
+  const financeUnlockIntentRef = useRef<'tab' | 'delete' | null>(null)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -175,8 +178,7 @@ export default function FinancePage() {
     setFormError(null)
 
     if (!financeEditUnlocked) {
-      setFormError('請先輸入記帳密碼解鎖，才能新增紀錄。')
-      setShowFinanceUnlockDialog(true)
+      setFormError('請改由上方「記一筆」分頁輸入密碼解鎖。')
       return
     }
 
@@ -231,6 +233,7 @@ export default function FinancePage() {
 
   const handleDelete = async (id: string) => {
     if (!financeEditUnlocked) {
+      financeUnlockIntentRef.current = 'delete'
       setShowFinanceUnlockDialog(true)
       return
     }
@@ -252,8 +255,29 @@ export default function FinancePage() {
     }
     sessionStorage.setItem(FINANCE_EDIT_UNLOCKED_KEY, '1')
     setFinanceEditUnlocked(true)
+    const intent = financeUnlockIntentRef.current
+    financeUnlockIntentRef.current = null
+    if (intent === 'tab') {
+      setFinanceActiveTab('add')
+    }
     setShowFinanceUnlockDialog(false)
     setFinanceUnlockInput('')
+  }
+
+  const handleFinanceTabChange = (v: string) => {
+    if (v === 'report') {
+      setFinanceActiveTab('report')
+      return
+    }
+    if (v === 'add') {
+      if (financeEditUnlocked) {
+        setFinanceActiveTab('add')
+        return
+      }
+      financeUnlockIntentRef.current = 'tab'
+      setFinanceUnlockError(null)
+      setShowFinanceUnlockDialog(true)
+    }
   }
 
   const clearCurrentUser = () => {
@@ -321,24 +345,16 @@ export default function FinancePage() {
           <div className="max-w-3xl mx-auto">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">收支記帳</h2>
             <p className="text-sm text-gray-600 mb-6">
-              僅管理者使用。「月報表」可隨時檢視；「記一筆」與刪除明細須輸入記帳密碼解鎖（與店長後台密碼不同）。
+              僅管理者使用。進入本頁預設為「月報表」可直接檢視；需記帳時請點「記一筆」並輸入記帳密碼（與店長後台密碼不同），解鎖後即可填寫。刪除明細亦須先解鎖。
             </p>
 
-            <Tabs defaultValue="add" className="w-full">
+            <Tabs value={financeActiveTab} onValueChange={handleFinanceTabChange} className="w-full">
               <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
                 <TabsTrigger value="add">記一筆</TabsTrigger>
                 <TabsTrigger value="report">月報表</TabsTrigger>
               </TabsList>
 
               <TabsContent value="add" className="mt-0 space-y-6">
-                {!financeEditUnlocked ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <span>記帳表單已鎖定。請先解鎖後再新增紀錄。</span>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setShowFinanceUnlockDialog(true)}>
-                      輸入記帳密碼解鎖
-                    </Button>
-                  </div>
-                ) : null}
                 <Card>
                   <CardHeader>
                     <CardTitle>新增收支</CardTitle>
@@ -351,7 +367,7 @@ export default function FinancePage() {
                         </div>
                       ) : null}
 
-                      <fieldset disabled={!financeEditUnlocked} className="space-y-5 min-w-0 border-0 p-0 m-0 disabled:opacity-60">
+                      <div className="space-y-5">
                       <div className="space-y-2">
                         <Label>類型</Label>
                         <Select
@@ -472,10 +488,10 @@ export default function FinancePage() {
                         ) : null}
                       </div>
 
-                      <Button type="submit" disabled={saving || !financeEditUnlocked} className="w-full sm:w-auto">
+                      <Button type="submit" disabled={saving} className="w-full sm:w-auto">
                         {saving ? '儲存中…' : '儲存'}
                       </Button>
-                      </fieldset>
+                      </div>
                     </form>
                   </CardContent>
                 </Card>
@@ -650,6 +666,7 @@ export default function FinancePage() {
         onOpenChange={(open) => {
           setShowFinanceUnlockDialog(open)
           if (!open) {
+            financeUnlockIntentRef.current = null
             setFinanceUnlockInput('')
             setFinanceUnlockError(null)
           }
@@ -658,7 +675,9 @@ export default function FinancePage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>記帳解鎖</DialogTitle>
-            <DialogDescription>輸入密碼後，此分頁可新增紀錄與刪除明細（僅在目前瀏覽器分頁有效，切換使用者後須重新解鎖）。</DialogDescription>
+            <DialogDescription>
+              輸入密碼後可新增紀錄與刪除明細；若剛才是點選「記一筆」進來，解鎖後會直接開啟記帳表單。狀態僅保留於目前瀏覽器分頁，切換使用者後須重新輸入。
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleFinanceUnlockSubmit}>
             <div className="space-y-4 py-4">
