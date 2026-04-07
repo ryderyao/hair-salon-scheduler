@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Shield, Users, LogOut } from 'lucide-react'
+import { Shield, Users } from 'lucide-react'
 import {
   ADMIN_SESSION_EXPIRES_AT_KEY,
   setAdminSessionExpiryFromNow,
@@ -26,7 +26,6 @@ export default function SelectUserPage() {
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
 
   useEffect(() => {
     createClient()
@@ -112,23 +111,8 @@ export default function SelectUserPage() {
     )
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    sessionStorage.clear()
-    window.location.href = '/login'
-  }
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4 relative">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="absolute top-4 right-4"
-        onClick={handleLogout}
-      >
-        <LogOut className="h-4 w-4 mr-1" />
-        登出
-      </Button>
       <div className="w-full max-w-md space-y-4">
         <h1 className="text-xl font-bold text-center text-gray-900">誰在使用？</h1>
 

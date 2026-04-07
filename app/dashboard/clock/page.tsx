@@ -390,10 +390,12 @@ export default function ClockPage() {
                 <RefreshCw className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">切換使用者</span>
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-                <LogOut className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">登出</span>
-              </Button>
+              {isAdmin ? (
+                <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
+                  <LogOut className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">登出</span>
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>

@@ -2,6 +2,9 @@
 
 export const ADMIN_SESSION_EXPIRES_AT_KEY = 'admin_session_expires_at'
 
+/** 收支頁「記一筆／刪除」解鎖（與管理者 8888 分開） */
+export const FINANCE_EDIT_UNLOCKED_KEY = 'finance_edit_unlocked'
+
 /** 15 分鐘 */
 export const ADMIN_SESSION_DURATION_MS = 15 * 60 * 1000
 
@@ -20,4 +23,5 @@ export function clearAdminSessionKeys() {
   sessionStorage.removeItem('admin_unlocked')
   sessionStorage.removeItem('salary_unlocked')
   sessionStorage.removeItem(ADMIN_SESSION_EXPIRES_AT_KEY)
+  sessionStorage.removeItem(FINANCE_EDIT_UNLOCKED_KEY)
 }

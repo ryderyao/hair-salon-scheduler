@@ -16,8 +16,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet, Trash2 } from 'lucide-react'
-import { clearAdminSessionKeys } from '@/lib/adminSession'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Users, Calendar, DollarSign, Clock, RefreshCw, Wallet, Trash2 } from 'lucide-react'
+import { clearAdminSessionKeys, FINANCE_EDIT_UNLOCKED_KEY } from '@/lib/adminSession'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 import {
@@ -39,6 +47,8 @@ const navItems = [
   { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
   { href: '/dashboard/finance', label: '收支', icon: Wallet },
 ]
+
+const FINANCE_EDIT_PASSWORD = '6666'
 
 interface FinanceRow {
   id: string
@@ -74,6 +84,10 @@ export default function FinancePage() {
   const [note, setNote] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [financeEditUnlocked, setFinanceEditUnlocked] = useState(false)
+  const [showFinanceUnlockDialog, setShowFinanceUnlockDialog] = useState(false)
+  const [financeUnlockInput, setFinanceUnlockInput] = useState('')
+  const [financeUnlockError, setFinanceUnlockError] = useState<string | null>(null)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -87,6 +101,11 @@ export default function FinancePage() {
     }
     setUserReady(true)
   }, [router])
+
+  useEffect(() => {
+    if (!userReady || typeof window === 'undefined') return
+    setFinanceEditUnlocked(sessionStorage.getItem(FINANCE_EDIT_UNLOCKED_KEY) === '1')
+  }, [userReady])
 
   const fetchMonth = useCallback(async () => {
     setListLoading(true)
@@ -155,6 +174,12 @@ export default function FinancePage() {
     e.preventDefault()
     setFormError(null)
 
+    if (!financeEditUnlocked) {
+      setFormError('請先輸入記帳密碼解鎖，才能新增紀錄。')
+      setShowFinanceUnlockDialog(true)
+      return
+    }
+
     const categoryId = direction === 'income' ? incomeCategoryId : expenseCategoryId
     if (!isValidFinanceEntry(direction, categoryId)) {
       setFormError('科目無效，請重新選擇。')
@@ -205,6 +230,10 @@ export default function FinancePage() {
   }
 
   const handleDelete = async (id: string) => {
+    if (!financeEditUnlocked) {
+      setShowFinanceUnlockDialog(true)
+      return
+    }
     if (!window.confirm('確定刪除此筆紀錄？')) return
     const { error } = await supabase.from('finance_entries').delete().eq('id', id)
     if (error) {
@@ -214,11 +243,17 @@ export default function FinancePage() {
     await fetchMonth()
   }
 
-  const handleLogout = async () => {
-    clearAdminSessionKeys()
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+  const handleFinanceUnlockSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setFinanceUnlockError(null)
+    if (financeUnlockInput !== FINANCE_EDIT_PASSWORD) {
+      setFinanceUnlockError('密碼錯誤')
+      return
+    }
+    sessionStorage.setItem(FINANCE_EDIT_UNLOCKED_KEY, '1')
+    setFinanceEditUnlocked(true)
+    setShowFinanceUnlockDialog(false)
+    setFinanceUnlockInput('')
   }
 
   const clearCurrentUser = () => {
@@ -255,10 +290,6 @@ export default function FinancePage() {
                 <RefreshCw className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">切換使用者</span>
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleLogout} className="shrink-0">
-                <LogOut className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">登出</span>
-              </Button>
             </div>
           </div>
         </div>
@@ -290,7 +321,7 @@ export default function FinancePage() {
           <div className="max-w-3xl mx-auto">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">收支記帳</h2>
             <p className="text-sm text-gray-600 mb-6">
-              僅管理者使用。外出版可隨手記錄，月底於「月報表」自動加總。
+              僅管理者使用。「月報表」可隨時檢視；「記一筆」與刪除明細須輸入記帳密碼解鎖（與店長後台密碼不同）。
             </p>
 
             <Tabs defaultValue="add" className="w-full">
@@ -300,18 +331,27 @@ export default function FinancePage() {
               </TabsList>
 
               <TabsContent value="add" className="mt-0 space-y-6">
+                {!financeEditUnlocked ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <span>記帳表單已鎖定。請先解鎖後再新增紀錄。</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowFinanceUnlockDialog(true)}>
+                      輸入記帳密碼解鎖
+                    </Button>
+                  </div>
+                ) : null}
                 <Card>
                   <CardHeader>
                     <CardTitle>新增收支</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-5">
-                      {formError && (
+                      {formError ? (
                         <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
                           {formError}
                         </div>
-                      )}
+                      ) : null}
 
+                      <fieldset disabled={!financeEditUnlocked} className="space-y-5 min-w-0 border-0 p-0 m-0 disabled:opacity-60">
                       <div className="space-y-2">
                         <Label>類型</Label>
                         <Select
@@ -432,9 +472,10 @@ export default function FinancePage() {
                         ) : null}
                       </div>
 
-                      <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+                      <Button type="submit" disabled={saving || !financeEditUnlocked} className="w-full sm:w-auto">
                         {saving ? '儲存中…' : '儲存'}
                       </Button>
+                      </fieldset>
                     </form>
                   </CardContent>
                 </Card>
@@ -555,7 +596,9 @@ export default function FinancePage() {
                               <th className="py-2 px-2 font-medium">科目</th>
                               <th className="py-2 px-2 font-medium text-right">金額</th>
                               <th className="py-2 px-2 font-medium">備註</th>
-                              <th className="py-2 px-2 w-10" />
+                              <th className="py-2 px-2 w-24 text-right font-medium text-gray-700">
+                                {financeEditUnlocked ? '刪除' : <span className="text-xs font-normal text-amber-800">刪除須解鎖</span>}
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -581,9 +624,9 @@ export default function FinancePage() {
                                     type="button"
                                     variant="ghost"
                                     size="icon"
-                                    className="h-8 w-8 text-gray-500 hover:text-red-600"
+                                    className={`h-8 w-8 ${financeEditUnlocked ? 'text-gray-500 hover:text-red-600' : 'text-gray-400 hover:text-amber-700'}`}
                                     onClick={() => handleDelete(r.id)}
-                                    aria-label="刪除"
+                                    aria-label={financeEditUnlocked ? '刪除' : '解鎖後刪除'}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -601,6 +644,43 @@ export default function FinancePage() {
           </div>
         </main>
       </div>
+
+      <Dialog
+        open={showFinanceUnlockDialog}
+        onOpenChange={(open) => {
+          setShowFinanceUnlockDialog(open)
+          if (!open) {
+            setFinanceUnlockInput('')
+            setFinanceUnlockError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>記帳解鎖</DialogTitle>
+            <DialogDescription>輸入密碼後，此分頁可新增紀錄與刪除明細（僅在目前瀏覽器分頁有效，切換使用者後須重新解鎖）。</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleFinanceUnlockSubmit}>
+            <div className="space-y-4 py-4">
+              <Input
+                type="password"
+                value={financeUnlockInput}
+                onChange={(e) => setFinanceUnlockInput(e.target.value)}
+                placeholder="記帳密碼"
+                autoFocus
+                autoComplete="off"
+              />
+              {financeUnlockError ? <p className="text-sm text-red-600">{financeUnlockError}</p> : null}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowFinanceUnlockDialog(false)}>
+                取消
+              </Button>
+              <Button type="submit">解鎖</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
         <div className="flex justify-around items-stretch h-16 overflow-x-auto">
