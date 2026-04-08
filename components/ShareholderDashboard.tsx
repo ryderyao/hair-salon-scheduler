@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/browser'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -134,12 +133,6 @@ export function ShareholderDashboard() {
     [expensePie]
   )
 
-  const kpiTitle = useMemo(() => {
-    if (chartYear === 'all') return '全期間（所有已記帳月份）'
-    if (monthChoice === 0) return `${chartYear} 年度累計`
-    return `${chartYear} 年 ${monthChoice} 月`
-  }, [chartYear, monthChoice])
-
   const handleYearChange = (v: string) => {
     if (v === 'all') {
       setChartYear('all')
@@ -152,17 +145,9 @@ export function ShareholderDashboard() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-600">
-        以下為門市收支總覽（僅讀取記帳資料，不修改資料庫）。詳細輸入與月報表請至{' '}
-        <Link href="/dashboard/finance" className="text-blue-600 hover:underline font-medium">
-          收支
-        </Link>
-        。
-      </p>
-
       <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 items-stretch sm:items-end">
         <div className="space-y-2 min-w-[140px]">
-          <span className="text-xs font-medium text-gray-600">走勢 — 年份</span>
+          <span className="text-xs font-medium text-gray-600">年份</span>
           <Select value={chartYear === 'all' ? 'all' : String(chartYear)} onValueChange={handleYearChange}>
             <SelectTrigger className="w-full sm:w-[160px]">
               <SelectValue placeholder="年份" />
@@ -178,7 +163,7 @@ export function ShareholderDashboard() {
           </Select>
         </div>
         <div className="space-y-2 min-w-[140px]">
-          <span className="text-xs font-medium text-gray-600">指標／圓餅 — 月份</span>
+          <span className="text-xs font-medium text-gray-600">月份</span>
           <Select
             value={String(monthChoice)}
             onValueChange={(v) => setMonthChoice(parseInt(v, 10))}
@@ -197,13 +182,6 @@ export function ShareholderDashboard() {
             </SelectContent>
           </Select>
         </div>
-        {chartYear === 'all' ? (
-          <p className="text-xs text-gray-500 sm:pb-2">選「全部」時：走勢含所有月份；右側月份停用，指標與圓餅為全期間。</p>
-        ) : (
-          <p className="text-xs text-gray-500 sm:pb-2">
-            走勢仍為所選年度 1～12 月；指標與圓餅依「月份」聚焦（選「全年」則為該年合計）。
-          </p>
-        )}
       </div>
 
       {fetchError ? (
@@ -219,7 +197,7 @@ export function ShareholderDashboard() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <Card>
               <CardHeader className="py-3 pb-1 space-y-0">
-                <CardTitle className="text-xs font-medium text-gray-500">收入（{kpiTitle}）</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-500">收入</CardTitle>
               </CardHeader>
               <CardContent className="pt-0 pb-3">
                 <p className="text-lg sm:text-xl font-bold text-green-700">{formatDashboardMoney(kpi.income)}</p>
@@ -227,7 +205,7 @@ export function ShareholderDashboard() {
             </Card>
             <Card>
               <CardHeader className="py-3 pb-1 space-y-0">
-                <CardTitle className="text-xs font-medium text-gray-500">支出（{kpiTitle}）</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-500">支出</CardTitle>
               </CardHeader>
               <CardContent className="pt-0 pb-3">
                 <p className="text-lg sm:text-xl font-bold text-red-700">{formatDashboardMoney(kpi.expense)}</p>
@@ -235,7 +213,7 @@ export function ShareholderDashboard() {
             </Card>
             <Card>
               <CardHeader className="py-3 pb-1 space-y-0">
-                <CardTitle className="text-xs font-medium text-gray-500">淨額（{kpiTitle}）</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-500">淨額</CardTitle>
               </CardHeader>
               <CardContent className="pt-0 pb-3">
                 <p
@@ -257,12 +235,7 @@ export function ShareholderDashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base sm:text-lg">
-                月趨勢（{chartYear === 'all' ? '全部年份' : `${chartYear} 年`}）
-              </CardTitle>
-              <p className="text-xs text-gray-500 font-normal">
-                收入、支出、淨額；橫軸為曆月。切換「月份」不會改變此圖。
-              </p>
+              <CardTitle className="text-base sm:text-lg">月趨勢</CardTitle>
             </CardHeader>
             <CardContent className="h-[300px] sm:h-[340px] w-full min-w-0 -ml-2 sm:ml-0">
               {trendData.length === 0 ? (
@@ -293,7 +266,7 @@ export function ShareholderDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">收入 — 科目分布（{kpiTitle}）</CardTitle>
+                <CardTitle className="text-base">收入 · 科目分布</CardTitle>
               </CardHeader>
               <CardContent className="h-[280px] w-full min-w-0">
                 {incomePieLabeled.length === 0 ? (
@@ -323,7 +296,7 @@ export function ShareholderDashboard() {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">支出 — 科目分布（{kpiTitle}）</CardTitle>
+                <CardTitle className="text-base">支出 · 科目分布</CardTitle>
               </CardHeader>
               <CardContent className="h-[280px] w-full min-w-0">
                 {expensePieLabeled.length === 0 ? (

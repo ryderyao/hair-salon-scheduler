@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Users, Calendar, DollarSign, Clock, RefreshCw, Wallet, Trash2, LayoutDashboard } from 'lucide-react'
+import { Users, Calendar, DollarSign, Clock, RefreshCw, Wallet, Trash2, LayoutDashboard, Pencil } from 'lucide-react'
 import { clearAdminSessionKeys, FINANCE_EDIT_UNLOCKED_KEY } from '@/lib/adminSession'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
@@ -90,7 +90,19 @@ export default function FinancePage() {
   const [financeUnlockInput, setFinanceUnlockInput] = useState('')
   const [financeUnlockError, setFinanceUnlockError] = useState<string | null>(null)
   const [financeActiveTab, setFinanceActiveTab] = useState<'add' | 'report'>('report')
-  const financeUnlockIntentRef = useRef<'tab' | 'delete' | null>(null)
+  const financeUnlockIntentRef = useRef<'tab' | 'delete' | 'edit' | null>(null)
+  const pendingEditRowRef = useRef<FinanceRow | null>(null)
+
+  const [editingRow, setEditingRow] = useState<FinanceRow | null>(null)
+  const [edDir, setEdDir] = useState<FinanceDirection>('expense')
+  const [edExpenseGroup, setEdExpenseGroup] = useState<ExpenseGroupId>('fixed')
+  const [edIncomeCat, setEdIncomeCat] = useState<string>(INCOME_CATEGORIES[0].id)
+  const [edExpenseCat, setEdExpenseCat] = useState<string>(EXPENSE_CATEGORIES.fixed[0].id)
+  const [edDate, setEdDate] = useState('')
+  const [edAmount, setEdAmount] = useState('')
+  const [edNote, setEdNote] = useState('')
+  const [edError, setEdError] = useState<string | null>(null)
+  const [edSaving, setEdSaving] = useState(false)
 
   const todayStr = format(new Date(), 'yyyy-MM-dd')
 
@@ -231,6 +243,88 @@ export default function FinancePage() {
     await fetchMonth()
   }
 
+  const fillEditFormFromRow = useCallback((row: FinanceRow) => {
+    setEdDir(row.direction)
+    if (row.direction === 'income') {
+      setEdIncomeCat(row.category_id)
+    } else {
+      const g = getExpenseGroupForCategory(row.category_id) ?? 'fixed'
+      setEdExpenseGroup(g)
+      setEdExpenseCat(row.category_id)
+    }
+    setEdDate(row.entry_date)
+    setEdAmount(String(row.amount))
+    setEdNote(row.note ?? '')
+    setEdError(null)
+  }, [])
+
+  const requestEdit = (row: FinanceRow) => {
+    if (!financeEditUnlocked) {
+      pendingEditRowRef.current = row
+      financeUnlockIntentRef.current = 'edit'
+      setFinanceUnlockError(null)
+      setShowFinanceUnlockDialog(true)
+      return
+    }
+    fillEditFormFromRow(row)
+    setEditingRow(row)
+  }
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEdError(null)
+    if (!editingRow) return
+
+    const categoryId = edDir === 'income' ? edIncomeCat : edExpenseCat
+    if (!isValidFinanceEntry(edDir, categoryId)) {
+      setEdError('科目無效，請重新選擇。')
+      return
+    }
+
+    const noteTrim = edNote.trim()
+    if (isNoteRequired(categoryId) && !noteTrim) {
+      setEdError('此科目請填寫備註，說明支出或收入內容。')
+      return
+    }
+
+    if (edDate > todayStr) {
+      setEdError('日期不可晚於今天。')
+      return
+    }
+
+    const amt = parseFloat(edAmount.replace(/,/g, ''))
+    if (Number.isNaN(amt) || amt <= 0) {
+      setEdError('請輸入大於 0 的金額。')
+      return
+    }
+
+    const rounded = Math.round(amt * 100) / 100
+    setEdSaving(true)
+    const { error } = await supabase
+      .from('finance_entries')
+      .update({
+        entry_date: edDate,
+        direction: edDir,
+        category_id: categoryId,
+        amount: rounded,
+        note: noteTrim || null,
+      })
+      .eq('id', editingRow.id)
+    setEdSaving(false)
+
+    if (error) {
+      if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+        setEdError('資料表尚未建立。請在 Supabase 執行 supabase/migration_finance_entries.sql。')
+      } else {
+        setEdError(error.message || '更新失敗')
+      }
+      return
+    }
+
+    setEditingRow(null)
+    await fetchMonth()
+  }
+
   const handleDelete = async (id: string) => {
     if (!financeEditUnlocked) {
       financeUnlockIntentRef.current = 'delete'
@@ -259,6 +353,13 @@ export default function FinancePage() {
     financeUnlockIntentRef.current = null
     if (intent === 'tab') {
       setFinanceActiveTab('add')
+    } else if (intent === 'edit') {
+      const pr = pendingEditRowRef.current
+      pendingEditRowRef.current = null
+      if (pr) {
+        fillEditFormFromRow(pr)
+        setEditingRow(pr)
+      }
     }
     setShowFinanceUnlockDialog(false)
     setFinanceUnlockInput('')
@@ -345,7 +446,7 @@ export default function FinancePage() {
           <div className="max-w-3xl mx-auto">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">收支記帳</h2>
             <p className="text-sm text-gray-600 mb-6">
-              僅管理者使用。進入本頁預設為「月報表」可直接檢視；需記帳時請點「記一筆」並輸入記帳密碼（與店長後台密碼不同），解鎖後即可填寫。刪除明細亦須先解鎖。
+              僅管理者使用。預設為「月報表」；記帳、編輯或刪除明細須先點「記一筆」輸入記帳密碼解鎖（與店長後台密碼不同）。
             </p>
 
             <Tabs value={financeActiveTab} onValueChange={handleFinanceTabChange} className="w-full">
@@ -612,9 +713,8 @@ export default function FinancePage() {
                               <th className="py-2 px-2 font-medium">科目</th>
                               <th className="py-2 px-2 font-medium text-right">金額</th>
                               <th className="py-2 px-2 font-medium">備註</th>
-                              <th className="py-2 px-2 w-24 text-right font-medium text-gray-700">
-                                {financeEditUnlocked ? '刪除' : <span className="text-xs font-normal text-amber-800">刪除須解鎖</span>}
-                              </th>
+                              <th className="py-2 px-1 w-10 text-center font-medium text-gray-700 text-xs">編輯</th>
+                              <th className="py-2 px-1 w-10 text-center font-medium text-gray-700 text-xs">刪除</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -635,7 +735,19 @@ export default function FinancePage() {
                                 <td className="py-2 px-2 max-w-[140px] truncate" title={r.note ?? ''}>
                                   {r.note ?? '—'}
                                 </td>
-                                <td className="py-2 px-2">
+                                <td className="py-2 px-1 text-center">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-8 w-8 ${financeEditUnlocked ? 'text-gray-500 hover:text-blue-600' : 'text-gray-400 hover:text-amber-700'}`}
+                                    onClick={() => requestEdit(r)}
+                                    aria-label={financeEditUnlocked ? '編輯' : '解鎖後編輯'}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                                <td className="py-2 px-1 text-center">
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -662,11 +774,163 @@ export default function FinancePage() {
       </div>
 
       <Dialog
+        open={editingRow !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingRow(null)
+            setEdError(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>編輯明細</DialogTitle>
+            <DialogDescription>儲存後會更新此筆紀錄。</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            {edError ? (
+              <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">{edError}</div>
+            ) : null}
+            <div className="space-y-2">
+              <Label>類型</Label>
+              <Select
+                value={edDir}
+                onValueChange={(v) => {
+                  const d = v as FinanceDirection
+                  setEdDir(d)
+                  if (d === 'income') setEdIncomeCat(INCOME_CATEGORIES[0].id)
+                  else {
+                    setEdExpenseGroup('fixed')
+                    setEdExpenseCat(EXPENSE_CATEGORIES.fixed[0].id)
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="income">收入</SelectItem>
+                  <SelectItem value="expense">支出</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ed-entry-date">日期</Label>
+              <Input
+                id="ed-entry-date"
+                type="date"
+                value={edDate}
+                max={todayStr}
+                onChange={(e) => setEdDate(e.target.value)}
+                required
+              />
+            </div>
+            {edDir === 'income' ? (
+              <div className="space-y-2">
+                <Label>收入科目</Label>
+                <Select value={edIncomeCat} onValueChange={setEdIncomeCat}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INCOME_CATEGORIES.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>支出大類</Label>
+                  <Select
+                    value={edExpenseGroup}
+                    onValueChange={(v) => {
+                      const g = v as ExpenseGroupId
+                      setEdExpenseGroup(g)
+                      const first = EXPENSE_CATEGORIES[g][0]?.id
+                      if (first) setEdExpenseCat(first)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EXPENSE_GROUP_META.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>科目</Label>
+                  <Select value={edExpenseCat} onValueChange={setEdExpenseCat}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EXPENSE_CATEGORIES[edExpenseGroup].map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="ed-amount">金額</Label>
+              <Input
+                id="ed-amount"
+                type="number"
+                inputMode="decimal"
+                min={0.01}
+                step={0.01}
+                value={edAmount}
+                onChange={(e) => setEdAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ed-note">備註</Label>
+              <textarea
+                id="ed-note"
+                className="w-full min-h-[88px] px-3 py-2 text-sm border border-input rounded-md bg-background"
+                placeholder={
+                  edDir === 'income' && edIncomeCat === 'income_other'
+                    ? '其他收入請說明'
+                    : edDir === 'expense' && edExpenseCat.endsWith('_other')
+                    ? '其他支出請說明'
+                    : '選填'
+                }
+                value={edNote}
+                onChange={(e) => setEdNote(e.target.value)}
+              />
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setEditingRow(null)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={edSaving}>
+                {edSaving ? '儲存中…' : '儲存'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={showFinanceUnlockDialog}
         onOpenChange={(open) => {
           setShowFinanceUnlockDialog(open)
           if (!open) {
             financeUnlockIntentRef.current = null
+            pendingEditRowRef.current = null
             setFinanceUnlockInput('')
             setFinanceUnlockError(null)
           }
@@ -676,7 +940,7 @@ export default function FinancePage() {
           <DialogHeader>
             <DialogTitle>記帳解鎖</DialogTitle>
             <DialogDescription>
-              輸入密碼後可新增紀錄與刪除明細；若剛才是點選「記一筆」進來，解鎖後會直接開啟記帳表單。狀態僅保留於目前瀏覽器分頁，切換使用者後須重新輸入。
+              輸入密碼後可新增、編輯與刪除明細。若剛才是點「記一筆」，解鎖後會開啟記帳表單。僅在目前分頁有效，切換使用者後須重新輸入。
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleFinanceUnlockSubmit}>

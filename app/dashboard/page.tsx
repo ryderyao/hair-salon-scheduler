@@ -96,10 +96,7 @@ export default function DashboardPage() {
         {/* 主內容區 */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">歡迎使用排班系統</h2>
-            <p className="text-sm text-gray-600 mb-6">
-              股東／管理總覽：以下為收支儀表板。日常作業請使用左側選單。
-            </p>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">營收儀表板</h2>
             <ShareholderDashboard />
           </div>
         </main>
