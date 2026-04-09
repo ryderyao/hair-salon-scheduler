@@ -28,6 +28,7 @@ import { Users, Calendar, DollarSign, Clock, RefreshCw, Wallet, Trash2, LayoutDa
 import { clearAdminSessionKeys, FINANCE_EDIT_UNLOCKED_KEY } from '@/lib/adminSession'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
+import { SiteBrand } from '@/components/SiteBrand'
 import {
   EXPENSE_GROUP_META,
   EXPENSE_CATEGORIES,
@@ -409,7 +410,7 @@ export default function FinancePage() {
       <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
+            <SiteBrand />
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
                 <RefreshCw className="h-4 w-4 sm:mr-2" />

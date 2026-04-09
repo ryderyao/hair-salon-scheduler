@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
+import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { zhTW } from 'date-fns/locale'
 
@@ -294,7 +295,7 @@ export default function SchedulePage() {
       <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">洗頭店排班系統</h1>
+            <SiteBrand />
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={clearCurrentUser} className="shrink-0">
                 <RefreshCw className="h-4 w-4 sm:mr-2" />

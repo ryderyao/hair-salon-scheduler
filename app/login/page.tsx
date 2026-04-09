@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
+import { SiteBrand } from '@/components/SiteBrand'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -39,8 +40,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">洗頭店排班系統</CardTitle>
+        <CardHeader className="text-center space-y-3">
+          <SiteBrand variant="login" />
           <CardDescription>請使用店長帳號登入</CardDescription>
         </CardHeader>
         <CardContent>

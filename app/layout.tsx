@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: '洗頭店排班系統',
-  description: '洗頭店店長排班管理系統',
+  title: 'HAIRO-桃園經國館',
+  description: 'HAIRO 桃園經國館 — 排班與店務管理',
 }
 
 export default function RootLayout({
