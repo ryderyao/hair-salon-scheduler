@@ -1,4 +1,11 @@
 import { format, subMonths } from 'date-fns'
+import {
+  categorizeLineItemFragment,
+  categoryLabel,
+  splitLineItemFragments,
+  type LineItemCategoryId,
+  LINE_ITEM_CATEGORY_ORDER,
+} from '@/lib/salesLineItemCategory'
 
 export type SalesTxRow = {
   id: string
@@ -53,6 +60,52 @@ export function sumCheckout(rows: Pick<SalesTxRow, 'checkout_total'>[]): number 
 
 export function sumRefund(rows: Pick<SalesTxRow, 'refund_amount'>[]): number {
   return rows.reduce((s, r) => s + Number(r.refund_amount || 0), 0)
+}
+
+/** 完成結帳時間在指定時區的小時 0–23（無效則 null） */
+export function hourInTimeZone(iso: string, timeZone: string): number | null {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const hv = parts.find((p) => p.type === 'hour')?.value
+  if (hv == null) return null
+  const h = parseInt(hv, 10)
+  if (Number.isNaN(h)) return null
+  return h
+}
+
+/**
+ * 依「完成結帳時間」每 2 小時一組加總結帳金額與筆數（預設台灣時間，與 migration 範圍 +08:00 一致）
+ * 區間：00:00–02:00 … 22:00–24:00 共 12 格
+ */
+export function buildTwoHourSlotSeries(
+  rows: SalesTxRow[],
+  timeZone = 'Asia/Taipei'
+): { label: string; total: number; count: number }[] {
+  const slots: { label: string; total: number; count: number }[] = Array.from(
+    { length: 12 },
+    (_, i) => {
+      const a = String(i * 2).padStart(2, '0')
+      const b = String(i * 2 + 2).padStart(2, '0')
+      return {
+        label: `${a}:00–${b}:00`,
+        total: 0,
+        count: 0,
+      }
+    }
+  )
+  for (const r of rows) {
+    const h = hourInTimeZone(r.completed_at, timeZone)
+    if (h == null) continue
+    const idx = Math.min(11, Math.floor(h / 2))
+    slots[idx].total += Number(r.checkout_total || 0)
+    slots[idx].count += 1
+  }
+  return slots
 }
 
 export function buildDailySeries(rows: SalesTxRow[]): { day: string; total: number }[] {
@@ -117,42 +170,47 @@ export function buildCustomerVisitTop5(
 }
 
 /**
- * 結帳項目拆項（逗號 / 中文逗號）後依金額均分至各項，再加總成圓餅占比
+ * 結帳項目拆項（逗號／中文逗號；並先移除數字千分位逗號避免誤切）後金額均分，
+ * 再對應「服務大類」加總成圓餅占比（見 salesLineItemCategory）。
  */
 export function buildLineItemsPie(
   monthRowsCompleted: SalesTxRow[],
   maxSlices = 9
 ): { name: string; value: number }[] {
-  const map = new Map<string, number>()
+  const map = new Map<LineItemCategoryId, number>()
+
+  const add = (id: LineItemCategoryId, v: number) => {
+    map.set(id, (map.get(id) ?? 0) + v)
+  }
+
   for (const r of monthRowsCompleted) {
     const raw = (r.line_items || '').trim()
     const amount = Number(r.checkout_total || 0)
     if (!raw) {
-      map.set('（無項目）', (map.get('（無項目）') || 0) + amount)
+      add('other', amount)
       continue
     }
-    const parts = raw
-      .split(/[,，]/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-    const n = parts.length
-    if (n === 0) {
-      map.set('（無項目）', (map.get('（無項目）') || 0) + amount)
+    const parts = splitLineItemFragments(raw)
+    if (parts.length === 0) {
+      add('other', amount)
       continue
     }
-    const share = amount / n
+    const share = amount / parts.length
     for (const p of parts) {
-      const label = p.length > 36 ? `${p.slice(0, 33)}…` : p
-      map.set(label, (map.get(label) || 0) + share)
+      add(categorizeLineItemFragment(p), share)
     }
   }
-  const arr = Array.from(map.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-  if (arr.length <= maxSlices + 1) return arr
-  const top = arr.slice(0, maxSlices)
-  const rest = arr.slice(maxSlices).reduce((s, x) => s + x.value, 0)
-  return [...top, { name: '其他', value: rest }]
+
+  const ordered: { name: string; value: number }[] = []
+  for (const id of LINE_ITEM_CATEGORY_ORDER) {
+    const v = map.get(id) ?? 0
+    if (v > 0) ordered.push({ name: categoryLabel(id), value: v })
+  }
+
+  if (ordered.length <= maxSlices + 1) return ordered
+  const top = ordered.slice(0, maxSlices)
+  const rest = ordered.slice(maxSlices).reduce((s, x) => s + x.value, 0)
+  return [...top, { name: '其他（細項合併）', value: rest }]
 }
 
 export function recentMonthOptions(count: number): string[] {

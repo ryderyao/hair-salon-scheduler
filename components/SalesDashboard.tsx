@@ -17,6 +17,7 @@ import {
   buildLineItemsPie,
   buildMonthlyTrendForYear,
   buildPaymentBreakdown,
+  buildTwoHourSlotSeries,
   calendarYearRangeIso,
   filterCompletedRows,
   sumCheckout,
@@ -57,6 +58,9 @@ const YEAR_OPTIONS = buildYearOptions()
 const CHART_MUTED = '#94a3b8'
 const ACCENT = '#0f766e'
 
+/** 時段圖略過 00:00–10:00；自 index 5 = 10:00–12:00 起顯示 */
+const TIME_SLOT_BUSINESS_START_INDEX = 5
+
 const PIE_COLORS = [
   '#0f766e',
   '#0369a1',
@@ -72,6 +76,85 @@ const PIE_COLORS = [
 
 function formatMoney(n: number) {
   return `$${Math.round(n).toLocaleString('zh-TW')}`
+}
+
+/** 淺色 → 深色（依筆數相對最大值） */
+function mixHex(from: string, to: string, t: number): string {
+  const x = (s: string) => parseInt(s.slice(1), 16)
+  const A = x(from)
+  const B = x(to)
+  const ar = (A >> 16) & 0xff
+  const ag = (A >> 8) & 0xff
+  const ab = A & 0xff
+  const br = (B >> 16) & 0xff
+  const bg = (B >> 8) & 0xff
+  const bb = B & 0xff
+  const r = Math.round(ar + (br - ar) * t)
+  const g = Math.round(ag + (bg - ag) * t)
+  const b = Math.round(ab + (bb - ab) * t)
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+function slotHeatPalette(counts: number[]): string[] {
+  const LIGHT = '#ccfbf1'
+  const DARK = '#0f766e'
+  const max = Math.max(0, ...counts)
+  if (max === 0) return counts.map(() => LIGHT)
+  return counts.map((c) => mixHex(LIGHT, DARK, Math.min(1, c / max)))
+}
+
+type TimeSlotBarDatum = { label: string; total: number; count: number }
+
+function TimeDistributionBarCard({
+  slots,
+  contentHeightClass,
+}: {
+  slots: TimeSlotBarDatum[]
+  contentHeightClass: string
+}) {
+  const fills = useMemo(() => slotHeatPalette(slots.map((s) => s.count)), [slots])
+  return (
+    <Card className="border-slate-200/90 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-semibold text-slate-800">時段分佈</CardTitle>
+      </CardHeader>
+      <CardContent className={contentHeightClass}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={slots} margin={{ top: 8, right: 12, left: 4, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10, fill: CHART_MUTED }}
+              stroke="#cbd5e1"
+              interval={0}
+              angle={-28}
+              textAnchor="end"
+              height={52}
+            />
+            <YAxis
+              allowDecimals={false}
+              tick={{ fontSize: 11, fill: CHART_MUTED }}
+              stroke="#cbd5e1"
+            />
+            <Tooltip
+              formatter={(value: number) => [`${Number(value)} 筆`, '結單筆數']}
+              labelFormatter={(label) => String(label)}
+              contentStyle={{
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                fontSize: '13px',
+              }}
+            />
+            <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+              {slots.map((s, i) => (
+                <Cell key={s.label} fill={fills[i] ?? '#ccfbf1'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  )
 }
 
 function rowInCalendarMonth(r: SalesTxRow, ym: string): boolean {
@@ -183,6 +266,16 @@ export function SalesDashboard() {
   const payments = useMemo(() => buildPaymentBreakdown(monthCompleted), [monthCompleted])
   const lineItemsPie = useMemo(() => buildLineItemsPie(monthCompleted), [monthCompleted])
   const customerTop5 = useMemo(() => buildCustomerVisitTop5(monthCompleted), [monthCompleted])
+
+  /** 略過 00:00–10:00（未營業），自 10:00–12:00 起顯示 */
+  const timeSlotSeriesYear = useMemo(
+    () => buildTwoHourSlotSeries(yearCompleted).slice(TIME_SLOT_BUSINESS_START_INDEX),
+    [yearCompleted]
+  )
+  const timeSlotSeriesMonth = useMemo(
+    () => buildTwoHourSlotSeries(monthCompleted).slice(TIME_SLOT_BUSINESS_START_INDEX),
+    [monthCompleted]
+  )
 
   const avgTicket = kpiRows.length > 0 ? totalCheckout / kpiRows.length : 0
 
@@ -443,6 +536,13 @@ export function SalesDashboard() {
             </CardContent>
           </Card>
 
+          {viewMonth === 'all' ? (
+            <TimeDistributionBarCard
+              slots={timeSlotSeriesYear}
+              contentHeightClass="h-[300px] pt-0"
+            />
+          ) : null}
+
           {isMonthDetail && monthCompleted.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-slate-600">
               {monthDetailLabel} 尚無「完成結帳」資料；請換月份或確認匯入檔是否含該月。
@@ -451,57 +551,64 @@ export function SalesDashboard() {
 
           {isMonthDetail && monthCompleted.length > 0 ? (
             <>
+              <Card className="border-slate-200/90 shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-semibold text-slate-800">
+                    每日結帳金額（{monthDetailLabel}）
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="h-[300px] pt-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="salesArea2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={ACCENT} stopOpacity={0.22} />
+                          <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 11, fill: CHART_MUTED }}
+                        tickFormatter={(v) => {
+                          const [, , d] = String(v).split('-')
+                          return d ? `${parseInt(d, 10)}日` : v
+                        }}
+                        stroke="#cbd5e1"
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: CHART_MUTED }}
+                        tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)}
+                        stroke="#cbd5e1"
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [formatMoney(Number(value)), '結帳']}
+                        labelFormatter={(label) => String(label)}
+                        contentStyle={{
+                          borderRadius: '12px',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '13px',
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="total"
+                        stroke={ACCENT}
+                        strokeWidth={2}
+                        fill="url(#salesArea2)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
               <div className="grid lg:grid-cols-5 gap-4">
-                <Card className="lg:col-span-3 border-slate-200/90 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base font-semibold text-slate-800">
-                      每日結帳金額（{monthDetailLabel}）
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="h-[280px] pt-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="salesArea2" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.22} />
-                            <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                        <XAxis
-                          dataKey="day"
-                          tick={{ fontSize: 11, fill: CHART_MUTED }}
-                          tickFormatter={(v) => {
-                            const [, , d] = String(v).split('-')
-                            return d ? `${parseInt(d, 10)}日` : v
-                          }}
-                          stroke="#cbd5e1"
-                        />
-                        <YAxis
-                          tick={{ fontSize: 11, fill: CHART_MUTED }}
-                          tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : `${v}`)}
-                          stroke="#cbd5e1"
-                        />
-                        <Tooltip
-                          formatter={(value: number) => [formatMoney(Number(value)), '結帳']}
-                          labelFormatter={(label) => String(label)}
-                          contentStyle={{
-                            borderRadius: '12px',
-                            border: '1px solid #e2e8f0',
-                            fontSize: '13px',
-                          }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="total"
-                          stroke={ACCENT}
-                          strokeWidth={2}
-                          fill="url(#salesArea2)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+                <div className="lg:col-span-3 min-w-0">
+                  <TimeDistributionBarCard
+                    slots={timeSlotSeriesMonth}
+                    contentHeightClass="h-[280px] pt-0"
+                  />
+                </div>
 
                 <Card className="lg:col-span-2 border-slate-200/90 shadow-sm">
                   <CardHeader className="pb-2">
@@ -574,7 +681,7 @@ export function SalesDashboard() {
                 <Card className="border-slate-200/90 shadow-sm">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base font-semibold text-slate-800">
-                      結帳項目占比（{monthDetailLabel}）
+                      結帳項目占比—大類（{monthDetailLabel}）
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="h-[300px] pt-0">
