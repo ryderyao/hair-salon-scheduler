@@ -8,15 +8,15 @@ import { Button } from '@/components/ui/button'
 import { LogOut, RefreshCw } from 'lucide-react'
 import { useCurrentUser } from '@/lib/useCurrentUser'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
-import { ShareholderDashboard } from '@/components/ShareholderDashboard'
 import { SiteBrand } from '@/components/SiteBrand'
+import { SalesDashboard } from '@/components/SalesDashboard'
 import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
 
-export default function DashboardPage() {
+export default function SalesPage() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const { currentUserId, isAdmin, ready, clearCurrentUser } = useCurrentUser()
+  const { currentUserId, ready, clearCurrentUser } = useCurrentUser()
 
   useEffect(() => {
     if (!ready) return
@@ -37,13 +37,12 @@ export default function DashboardPage() {
   }
 
   if (!ready || !currentUserId || currentUserId !== 'admin') {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">載入中...</div>
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 md:pb-0">
-      {/* 頂部導航 */}
-      <header className="bg-white shadow-sm border-b sticky top-0 z-40">
+    <div className="min-h-screen bg-slate-50/90 pb-24 md:pb-0">
+      <header className="bg-white/95 backdrop-blur border-b border-slate-200/80 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
             <SiteBrand />
@@ -62,9 +61,8 @@ export default function DashboardPage() {
       </header>
 
       <div className="flex">
-        {/* 側邊導航 - 桌面版 */}
-        <aside className="hidden md:block w-64 bg-white shadow-sm min-h-[calc(100vh-64px)] shrink-0">
-          <nav className="p-4 space-y-2">
+        <aside className="hidden md:block w-64 bg-white border-r border-slate-200/80 min-h-[calc(100vh-64px)] shrink-0">
+          <nav className="p-4 space-y-1.5">
             {MANAGER_NAV_ITEMS.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -72,13 +70,13 @@ export default function DashboardPage() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${
                     isActive
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-600 hover:bg-gray-50'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-5 w-5 shrink-0" />
                   <span className="font-medium">{item.label}</span>
                 </Link>
               )
@@ -86,17 +84,17 @@ export default function DashboardPage() {
           </nav>
         </aside>
 
-        {/* 主內容區 */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">營收儀表板</h2>
-            <ShareholderDashboard />
+          <div className="max-w-5xl mx-auto">
+            <div className="mb-6">
+              <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">銷售儀表板</h1>
+            </div>
+            <SalesDashboard />
           </div>
         </main>
       </div>
 
-      {/* 底部導航 - 手機版 */}
-      <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
+      <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t border-slate-200 z-40">
         <div className="flex justify-around items-stretch h-16 overflow-x-auto">
           {MANAGER_NAV_ITEMS.map((item) => {
             const Icon = item.icon
@@ -105,14 +103,12 @@ export default function DashboardPage() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center justify-center min-w-[4.5rem] flex-1 py-1.5 transition-colors ${
-                  isActive ? 'text-blue-600' : 'text-gray-500'
+                className={`flex flex-col items-center justify-center min-w-[3.75rem] flex-1 py-1.5 transition-colors ${
+                  isActive ? 'text-slate-900' : 'text-slate-400'
                 }`}
               >
                 <Icon className="h-5 w-5 mb-0.5 shrink-0" />
-                <span className="text-[10px] font-medium leading-tight text-center px-0.5">
-                  {item.label}
-                </span>
+                <span className="text-[10px] font-medium leading-tight text-center px-0.5">{item.label}</span>
               </Link>
             )
           })}

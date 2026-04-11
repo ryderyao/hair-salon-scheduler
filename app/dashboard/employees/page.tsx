@@ -17,9 +17,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import { Users, Calendar, DollarSign, LogOut, Plus, Pencil, Power, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
+import { LogOut, Plus, Pencil, Power, RefreshCw } from 'lucide-react'
 import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
+import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
 
 interface Employee {
   id: string
@@ -28,15 +29,6 @@ interface Employee {
   hourly_rate?: number
   created_at: string
 }
-
-const navItems = [
-  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
-  { href: '/dashboard/employees', label: '員工管理', icon: Users },
-  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
-  { href: '/dashboard/clock', label: '打卡', icon: Clock },
-  { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
-  { href: '/dashboard/finance', label: '收支', icon: Wallet },
-]
 
 /** 與 supabase/migration_salary_custom_shifts.sql 的 CHECK 一致 */
 const HOURLY_RATE_MIN = 200
@@ -232,7 +224,7 @@ export default function EmployeesPage() {
         {/* 側邊導航 - 桌面版 */}
         <aside className="hidden md:block w-64 bg-white shadow-sm min-h-[calc(100vh-64px)] shrink-0">
           <nav className="p-4 space-y-2">
-            {navItems.map((item) => {
+            {MANAGER_NAV_ITEMS.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (
@@ -336,7 +328,7 @@ export default function EmployeesPage() {
       {/* 底部導航 - 手機版 */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
         <div className="flex justify-around items-stretch h-16 overflow-x-auto">
-          {navItems.map((item) => {
+          {MANAGER_NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
             return (

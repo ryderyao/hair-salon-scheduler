@@ -13,9 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
+import { LogOut, RefreshCw } from 'lucide-react'
 import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
+import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 
@@ -33,15 +34,6 @@ const shiftHours: Record<string, number> = {
   evening: 4,
   full: 12,
 }
-
-const navItems = [
-  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
-  { href: '/dashboard/employees', label: '員工管理', icon: Users },
-  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
-  { href: '/dashboard/clock', label: '打卡', icon: Clock },
-  { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
-  { href: '/dashboard/finance', label: '收支', icon: Wallet },
-]
 
 function calcHoursFromClock(clockIn: string, clockOut: string): number {
   const ms = new Date(clockOut).getTime() - new Date(clockIn).getTime()
@@ -207,7 +199,7 @@ export default function PayrollPage() {
         {/* 側邊導航 - 桌面版 */}
         <aside className="hidden md:block w-64 bg-white shadow-sm min-h-[calc(100vh-64px)] shrink-0">
           <nav className="p-4 space-y-2">
-            {navItems.map((item) => {
+            {MANAGER_NAV_ITEMS.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
               return (
@@ -328,7 +320,7 @@ export default function PayrollPage() {
       {/* 底部導航 - 手機版 */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
         <div className="flex justify-around items-stretch h-16 overflow-x-auto">
-          {navItems.map((item) => {
+          {MANAGER_NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
             return (

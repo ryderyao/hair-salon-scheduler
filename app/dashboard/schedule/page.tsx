@@ -14,10 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Users, Calendar, DollarSign, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
+import { Calendar, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
 import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
+import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
 import { zhTW } from 'date-fns/locale'
 
 interface Employee {
@@ -39,14 +40,6 @@ interface Schedule {
   }
 }
 
-const adminNavItems = [
-  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
-  { href: '/dashboard/employees', label: '員工管理', icon: Users },
-  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
-  { href: '/dashboard/clock', label: '打卡', icon: Clock },
-  { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
-  { href: '/dashboard/finance', label: '收支', icon: Wallet },
-]
 const employeeNavItems = [
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
@@ -100,7 +93,7 @@ export default function SchedulePage() {
     if (!uid) router.replace('/dashboard/select')
   }, [userReady, router])
 
-  const navItems = isAdmin ? adminNavItems : employeeNavItems
+  const navItems = isAdmin ? MANAGER_NAV_ITEMS : employeeNavItems
   
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [employees, setEmployees] = useState<Employee[]>([])

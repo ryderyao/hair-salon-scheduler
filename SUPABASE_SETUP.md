@@ -91,3 +91,13 @@ END $$;
 若後台「收支」頁面出現資料表不存在的錯誤，請在 SQL Editor 執行專案內的 **`supabase/migration_finance_entries.sql`**。
 
 須已存在 `update_updated_at_column` 函數（若已跑過 `schema.sql` 或 `migration_clock_records.sql` 通常已有）。
+
+---
+
+## 銷售匯入與明細（`sales_import_batches` / `sales_transactions`）
+
+店長後台「**銷售**」頁面上傳店家匯出之 Excel 前，請在 SQL Editor 執行專案內的 **`supabase/migration_sales.sql`**。
+
+須已存在 `update_updated_at_column` 函數（同上）。此組資料表與 `finance_entries` **分開**，僅供銷售儀表板與匯入紀錄使用。
+
+若你**先前已跑過**較舊的 `migration_sales.sql`（尚無 **91APP** 欄），請再執行 **`supabase/migration_sales_91app_column.sql`** 新增 `app_91_payments_txn_id` 欄位，否則新版 21 欄 Excel 匯入會失敗。

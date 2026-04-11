@@ -10,9 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SiteBrand } from '@/components/SiteBrand'
 import { AdminClockRecordsPanel } from '@/components/AdminClockRecordsPanel'
 import { EmployeeMyClockRecordsPanel } from '@/components/EmployeeMyClockRecordsPanel'
-import { Users, Calendar, DollarSign, LogOut, Clock, RefreshCw, Wallet, LayoutDashboard } from 'lucide-react'
+import { LogOut, Clock, RefreshCw, Calendar } from 'lucide-react'
 import { format } from 'date-fns'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
+import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
 import { zhTW } from 'date-fns/locale'
 
 interface Employee {
@@ -30,14 +31,6 @@ interface ClockRecord {
   employees: { name: string }
 }
 
-const adminNavItems = [
-  { href: '/dashboard', label: '總覽', icon: LayoutDashboard },
-  { href: '/dashboard/employees', label: '員工管理', icon: Users },
-  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
-  { href: '/dashboard/clock', label: '打卡', icon: Clock },
-  { href: '/dashboard/payroll', label: '薪資計算', icon: DollarSign },
-  { href: '/dashboard/finance', label: '收支', icon: Wallet },
-]
 const employeeNavItems = [
   { href: '/dashboard/schedule', label: '排班', icon: Calendar },
   { href: '/dashboard/clock', label: '打卡', icon: Clock },
@@ -375,7 +368,7 @@ export default function ClockPage() {
     router.refresh()
   }
 
-  const navItems = isAdmin ? adminNavItems : employeeNavItems
+  const navItems = isAdmin ? MANAGER_NAV_ITEMS : employeeNavItems
 
   if (!userReady || !currentUserId) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
