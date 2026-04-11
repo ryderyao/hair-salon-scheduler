@@ -2,6 +2,8 @@
 
 一個專為洗頭店設計的店長排班管理系統，使用 Next.js + Supabase + Tailwind CSS 開發。
 
+**說明文件索引**：見 [`docs/README.md`](./docs/README.md)（Supabase 設定、migration 筆記、歷史歸檔與內部筆記）。
+
 ## 功能特色
 
 - 🔐 店長登入系統（單一帳號管理）
@@ -39,7 +41,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=你的_SUPABASE_ANON_KEY
 
 ### 3. 設定 Supabase 資料庫
 
-在 Supabase SQL Editor 中執行 `supabase/schema.sql` 來建立必要的表格。
+在 Supabase SQL Editor 中執行 `supabase/schema.sql` 來建立必要的表格。  
+更完整的表結構與 migration 說明見 [`docs/SUPABASE_SETUP.md`](./docs/SUPABASE_SETUP.md)。
 
 ### 4. 建立初始店長帳號
 
@@ -96,4 +99,3 @@ supabase/
 ## 授權
 
 MIT License
-# Force redeploy Sun Mar 22 22:14:40 CST 2026

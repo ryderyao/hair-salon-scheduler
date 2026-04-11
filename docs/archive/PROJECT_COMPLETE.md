@@ -64,7 +64,7 @@ my-app/
 │   └── schema.sql                 # 資料庫結構
 ├── README.md                      # 專案說明
 ├── DEPLOY.md                      # 部署指南
-└── DEPLOY_SUMMARY.md              # 部署摘要
+└── docs/archive/DEPLOY_SUMMARY.md # 部署摘要（已歸檔）
 ```
 
 ---
@@ -88,7 +88,7 @@ my-app/
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 4. 點擊 Deploy
 
-詳細步驟請參考 `DEPLOY_SUMMARY.md`
+詳細步驟請參考 `docs/archive/DEPLOY_SUMMARY.md`
 
 ---
 
@@ -146,7 +146,7 @@ export const SHIFT_TYPES = {
 
 - 專案壓縮檔：`/Users/ryder/.openclaw/workspace/hair-salon-scheduler/hair-salon-scheduler.zip`
 - 專案資料夾：`/Users/ryder/.openclaw/workspace/hair-salon-scheduler/my-app/`
-- 部署說明：`/Users/ryder/.openclaw/workspace/hair-salon-scheduler/DEPLOY_SUMMARY.md`
+- 部署說明：`docs/archive/DEPLOY_SUMMARY.md`
 
 ---
 

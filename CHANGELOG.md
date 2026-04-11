@@ -4,6 +4,14 @@
 
 ---
 
+## 文件結構 — 2026-04-12
+
+- **整理**：根目錄說明／筆記集中至 **`docs/`**（[`docs/README.md`](./docs/README.md)）；歷史部署與合併紀錄在 **`docs/archive/`**；內部筆記在 **`docs/notes/`**。
+- **`SUPABASE_SETUP.md`** 移至 **`docs/SUPABASE_SETUP.md`**（版更與根 `README` 連結已更新）。
+- **備份**：`hair-salon-scheduler.zip` 已移出專案目錄（請見本機桌面同名檔；專案以 Git 為準即可）。
+
+---
+
 ## 1.4.4 — 2026-04-11
 
 ### 銷售儀表板
@@ -28,7 +36,7 @@
 - **資料庫**：新增 **`sales_import_batches`**（匯入批次紀錄）、**`sales_transactions`**（明細）；**`訂單編號`** 唯一，重複上傳時以**最後一次匯入**覆寫該筆。與 **`finance_entries`** 分開。
 - **API**：`POST /api/sales/import`（需已 Supabase 登入），於伺服器端解析並寫入資料庫。
 - **儀表板**：依月份篩選顯示結帳總額、筆數、平均客單、退款合計、每日趨勢圖、付款方式長條圖；版面採獨立質感樣式（slate／teal），與總覽收支儀表板區隔。
-- **部署前**：請在 Supabase 執行 **`supabase/migration_sales.sql`**（見 `SUPABASE_SETUP.md`）。
+- **部署前**：請在 Supabase 執行 **`supabase/migration_sales.sql`**（見 `docs/SUPABASE_SETUP.md`）。
 - **依賴**：新增 **`xlsx`**（解析 Excel）。
 
 ### 導覽

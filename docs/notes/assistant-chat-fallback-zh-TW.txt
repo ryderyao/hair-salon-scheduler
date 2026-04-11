@@ -21,4 +21,4 @@
 更新：2026-04-10
 你在聊天視窗仍看到亂碼或 � ，確認為 Cursor 對話介面顯示中文的問題，不是你的設定錯誤。
 我在聊天裡會改用英文回覆；你繼續用簡體或繁體中文輸入均可。
-完整繁體中文請只看本檔與 sales-dashboard-notes-zh-TW.txt。
+完整繁體中文請只看本檔與同資料夾的 sales-dashboard-notes-zh-TW.txt（路徑：docs/notes/）。
