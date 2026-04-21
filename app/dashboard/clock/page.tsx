@@ -10,10 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SiteBrand } from '@/components/SiteBrand'
 import { AdminClockRecordsPanel } from '@/components/AdminClockRecordsPanel'
 import { EmployeeMyClockRecordsPanel } from '@/components/EmployeeMyClockRecordsPanel'
-import { LogOut, Clock, RefreshCw, Calendar } from 'lucide-react'
+import { LogOut, Clock, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
+import { EMPLOYEE_NAV_ITEMS } from '@/lib/employeeNav'
 import { zhTW } from 'date-fns/locale'
 
 interface Employee {
@@ -30,11 +31,6 @@ interface ClockRecord {
   clock_out_at: string | null
   employees: { name: string }
 }
-
-const employeeNavItems = [
-  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
-  { href: '/dashboard/clock', label: '打卡', icon: Clock },
-]
 
 type ClockTodaySectionProps = {
   currentTime: Date
@@ -368,7 +364,7 @@ export default function ClockPage() {
     router.refresh()
   }
 
-  const navItems = isAdmin ? MANAGER_NAV_ITEMS : employeeNavItems
+  const navItems = isAdmin ? MANAGER_NAV_ITEMS : EMPLOYEE_NAV_ITEMS
 
   if (!userReady || !currentUserId) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>

@@ -19,6 +19,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSam
 import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
+import { EMPLOYEE_NAV_ITEMS } from '@/lib/employeeNav'
 import { zhTW } from 'date-fns/locale'
 
 interface Employee {
@@ -39,11 +40,6 @@ interface Schedule {
     name: string
   }
 }
-
-const employeeNavItems = [
-  { href: '/dashboard/schedule', label: '排班', icon: Calendar },
-  { href: '/dashboard/clock', label: '打卡', icon: Clock },
-]
 
 const shiftLabels: Record<string, string> = {
   morning: '早班',
@@ -93,7 +89,7 @@ export default function SchedulePage() {
     if (!uid) router.replace('/dashboard/select')
   }, [userReady, router])
 
-  const navItems = isAdmin ? MANAGER_NAV_ITEMS : employeeNavItems
+  const navItems = isAdmin ? MANAGER_NAV_ITEMS : EMPLOYEE_NAV_ITEMS
   
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [employees, setEmployees] = useState<Employee[]>([])
