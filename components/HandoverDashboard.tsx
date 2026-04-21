@@ -430,7 +430,7 @@ export function HandoverDashboard({ supabase, currentUserId, isAdmin }: Props) {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg text-slate-900">今日交接看板</CardTitle>
           <p className="text-sm text-slate-600 mt-1">
-            {format(new Date(todayStr + 'T12:00:00'), 'yyyy年M月d日 EEEE', { locale: zhTW })} — 全班可讀；僅該筆填寫人或店長可編輯。
+            {format(new Date(todayStr + 'T12:00:00'), 'yyyy年M月d日 EEEE', { locale: zhTW })}
           </p>
         </CardHeader>
         <CardContent>
@@ -445,9 +445,6 @@ export function HandoverDashboard({ supabase, currentUserId, isAdmin }: Props) {
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg text-slate-900">填寫交接班</CardTitle>
-            <p className="text-sm text-slate-500 mt-1">
-              每日最多兩筆（早班、晚班各一）。登入員工送出之填寫人為本人；可補填。請完成清潔勾選與結帳聲明後送出。
-            </p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
