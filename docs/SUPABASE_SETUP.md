@@ -109,3 +109,11 @@ END $$;
 若「**交接**」頁面出現資料表不存在的錯誤，請在 SQL Editor 執行專案內的 **`supabase/migration_handover.sql`**。
 
 須已存在 `employees` 表與 `update_updated_at_column` 函數（若已跑過打卡相關 migration 通常已有）。
+
+---
+
+## 薪資加班登記（`payroll_overtime_entries`）
+
+店長後台「**薪資計算**」的**加班登記**與報表匯入前，請在 SQL Editor 執行 **`supabase/migration_payroll_overtime.sql`**。
+
+須已存在 `employees` 與 `update_updated_at_column`（與 `migration_clock_records.sql` 相同前提）。

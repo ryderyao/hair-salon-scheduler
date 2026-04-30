@@ -1,11 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/browser'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -13,10 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { LogOut, RefreshCw } from 'lucide-react'
+import { LogOut, RefreshCw, Download } from 'lucide-react'
 import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
+import {
+  billableHoursFromRaw,
+  formatRawHoursDisplay,
+  rawHoursFromClock,
+} from '@/lib/payrollCompute'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
 
@@ -24,9 +32,41 @@ interface PayrollData {
   employeeId: string
   employeeName: string
   hourlyRate: number
-  totalHours: number
-  totalAmount: number
+  /** 有打卡或排班紀錄的天數 */
   recordCount: number
+  /** 打卡原始時數加總（小數） */
+  rawClockHoursTotal: number
+  /** 打卡計薪：每日 ⌊原始⌋ 再加總 */
+  billableClockHoursTotal: number
+  overtimeHoursTotal: number
+  /** 計薪打卡 + 加班 */
+  totalBillableHours: number
+  totalAmount: number
+}
+
+interface PayrollDetailRow {
+  employeeId: string
+  employeeName: string
+  workDate: string
+  clockInDisplay: string
+  clockOutDisplay: string
+  rawHours: number
+  billableHours: number
+  source: 'clock' | 'schedule'
+}
+
+interface OvertimeEntryRow {
+  id: string
+  employee_id: string
+  work_date: string
+  overtime_hours: number
+  notes: string | null
+  employees?: { name: string } | { name: string }[]
+}
+
+interface EmployeeOption {
+  id: string
+  name: string
 }
 
 const shiftHours: Record<string, number> = {
@@ -35,28 +75,39 @@ const shiftHours: Record<string, number> = {
   full: 12,
 }
 
-function calcHoursFromClock(clockIn: string, clockOut: string): number {
-  const ms = new Date(clockOut).getTime() - new Date(clockIn).getTime()
-  return Math.round((ms / (1000 * 60 * 60)) * 10) / 10
-}
-
-/** 匯總後避免浮點誤差；僅供畫面用，不寫入資料庫 */
 function normalizePayrollRow(d: PayrollData): PayrollData {
-  const totalHours = Math.round(d.totalHours * 10) / 10
-  const totalAmount = Math.round(totalHours * d.hourlyRate)
-  return { ...d, totalHours, totalAmount }
+  const rawClockHoursTotal = Math.round(d.rawClockHoursTotal * 100) / 100
+  const overtimeHoursTotal = Math.round(d.overtimeHoursTotal * 100) / 100
+  const totalBillableHours = d.billableClockHoursTotal + overtimeHoursTotal
+  const totalAmount = Math.round(totalBillableHours * d.hourlyRate)
+  return {
+    ...d,
+    rawClockHoursTotal,
+    overtimeHoursTotal,
+    totalBillableHours,
+    totalAmount,
+  }
 }
 
 export default function PayrollPage() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  
+
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [payrollData, setPayrollData] = useState<PayrollData[]>([])
-  const [loading, setLoading] = useState(false)
+  const [detailRows, setDetailRows] = useState<PayrollDetailRow[]>([])
   const [dataSource, setDataSource] = useState<'clock' | 'schedule'>('clock')
+  const [loading, setLoading] = useState(false)
   const [userReady, setUserReady] = useState(false)
+  const [overtimeMissing, setOvertimeMissing] = useState(false)
+  const [overtimeEntries, setOvertimeEntries] = useState<OvertimeEntryRow[]>([])
+  const [employeesList, setEmployeesList] = useState<EmployeeOption[]>([])
+  const [otEmployeeId, setOtEmployeeId] = useState('')
+  const [otWorkDate, setOtWorkDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [otHours, setOtHours] = useState('1')
+  const [otNotes, setOtNotes] = useState('')
+  const [otSaving, setOtSaving] = useState(false)
 
   useEffect(() => {
     const uid = sessionStorage.getItem('current_user_id')
@@ -70,88 +121,314 @@ export default function PayrollPage() {
   }, [router])
 
   useEffect(() => {
-    if (!userReady) return
-    calculatePayroll()
-  }, [selectedMonth, userReady])
+    supabase
+      .from('employees')
+      .select('id, name')
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => {
+        const list = (data || []) as EmployeeOption[]
+        setEmployeesList(list)
+        setOtEmployeeId((prev) => prev || (list[0]?.id ?? ''))
+      })
+  }, [supabase])
 
-  const calculatePayroll = async () => {
+  const calculatePayroll = useCallback(async () => {
     setLoading(true)
-    
+    setOvertimeMissing(false)
+
     const [year, month] = selectedMonth.split('-').map(Number)
     const startDate = new Date(year, month - 1, 1)
     const endDate = endOfMonth(startDate)
     const startStr = format(startDate, 'yyyy-MM-dd')
     const endStr = format(endDate, 'yyyy-MM-dd')
 
-    // 1. 優先使用打卡紀錄
+    const payrollMap = new Map<string, PayrollData>()
+    const details: PayrollDetailRow[] = []
+
+    const ensureEmployee = (
+      employeeId: string,
+      employeeName: string,
+      hourlyRate: number
+    ) => {
+      if (!payrollMap.has(employeeId)) {
+        payrollMap.set(employeeId, {
+          employeeId,
+          employeeName,
+          hourlyRate,
+          recordCount: 0,
+          rawClockHoursTotal: 0,
+          billableClockHoursTotal: 0,
+          overtimeHoursTotal: 0,
+          totalBillableHours: 0,
+          totalAmount: 0,
+        })
+      }
+      return payrollMap.get(employeeId)!
+    }
+
     const { data: records } = await supabase
       .from('clock_records')
-      .select(`employee_id, clock_in_at, clock_out_at, employees(name, hourly_rate)`)
+      .select(`employee_id, work_date, clock_in_at, clock_out_at, employees(name, hourly_rate)`)
       .gte('work_date', startStr)
       .lte('work_date', endStr)
       .not('clock_out_at', 'is', null)
 
-    const payrollMap = new Map<string, PayrollData>()
-
     if (records && records.length > 0) {
       setDataSource('clock')
-      records.forEach((rec: { employee_id: string; clock_in_at: string; clock_out_at: string | null; employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] }) => {
-        if (!rec.clock_out_at) return
-        const employeeId = rec.employee_id
-        const emp = rec.employees
-        const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
-        const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
-        const hours = calcHoursFromClock(rec.clock_in_at, rec.clock_out_at)
+      records.forEach(
+        (rec: {
+          employee_id: string
+          work_date: string
+          clock_in_at: string
+          clock_out_at: string | null
+          employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[]
+        }) => {
+          if (!rec.clock_out_at) return
+          const employeeId = rec.employee_id
+          const emp = rec.employees
+          const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
+          const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
+          const raw = rawHoursFromClock(rec.clock_in_at, rec.clock_out_at)
+          const bill = billableHoursFromRaw(raw)
 
-        if (!payrollMap.has(employeeId)) {
-          payrollMap.set(employeeId, { employeeId, employeeName, hourlyRate, totalHours: 0, totalAmount: 0, recordCount: 0 })
+          const data = ensureEmployee(employeeId, employeeName, hourlyRate)
+          data.recordCount++
+          data.rawClockHoursTotal += raw
+          data.billableClockHoursTotal += bill
+
+          details.push({
+            employeeId,
+            employeeName,
+            workDate: rec.work_date,
+            clockInDisplay: format(new Date(rec.clock_in_at), 'yyyy-MM-dd HH:mm'),
+            clockOutDisplay: format(new Date(rec.clock_out_at), 'yyyy-MM-dd HH:mm'),
+            rawHours: raw,
+            billableHours: bill,
+            source: 'clock',
+          })
         }
-        const data = payrollMap.get(employeeId)!
-        data.totalHours += hours
-        data.recordCount++
-        data.totalAmount = data.totalHours * data.hourlyRate
-      })
+      )
     } else {
-      // 2. 若無打卡紀錄，改依排班表（保留既有資料）
       setDataSource('schedule')
       const { data: schedules } = await supabase
         .from('schedules')
-        .select(`employee_id, shift_type, hours, employees(name, hourly_rate)`)
+        .select(`employee_id, work_date, shift_type, hours, employees(name, hourly_rate)`)
         .gte('work_date', startStr)
         .lte('work_date', endStr)
 
-      schedules?.forEach((s: { employee_id: string; shift_type: string; hours?: number; employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[] }) => {
-        const employeeId = s.employee_id
-        const emp = s.employees
-        const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
-        const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
-        const hours = s.shift_type === 'custom' && typeof s.hours === 'number' ? s.hours : (shiftHours[s.shift_type] ?? 0)
+      schedules?.forEach(
+        (s: {
+          employee_id: string
+          work_date: string
+          shift_type: string
+          hours?: number
+          employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[]
+        }) => {
+          const employeeId = s.employee_id
+          const emp = s.employees
+          const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
+          const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
+          const hours =
+            s.shift_type === 'custom' && typeof s.hours === 'number'
+              ? s.hours
+              : (shiftHours[s.shift_type] ?? 0)
+          const bill = billableHoursFromRaw(hours)
 
-        if (!payrollMap.has(employeeId)) {
-          payrollMap.set(employeeId, { employeeId, employeeName, hourlyRate, totalHours: 0, totalAmount: 0, recordCount: 0 })
+          const data = ensureEmployee(employeeId, employeeName, hourlyRate)
+          data.recordCount++
+          data.rawClockHoursTotal += hours
+          data.billableClockHoursTotal += bill
+
+          details.push({
+            employeeId,
+            employeeName,
+            workDate: s.work_date,
+            clockInDisplay: '—',
+            clockOutDisplay: '—',
+            rawHours: hours,
+            billableHours: bill,
+            source: 'schedule',
+          })
         }
-        const data = payrollMap.get(employeeId)!
-        data.totalHours += hours
-        data.recordCount++
-        data.totalAmount = data.totalHours * data.hourlyRate
+      )
+    }
+
+    const { data: otData, error: otError } = await supabase
+      .from('payroll_overtime_entries')
+      .select('id, employee_id, work_date, overtime_hours, notes, employees(name)')
+      .gte('work_date', startStr)
+      .lte('work_date', endStr)
+      .order('work_date', { ascending: false })
+
+    if (otError) {
+      if (
+        otError.message?.includes('relation') &&
+        otError.message?.includes('does not exist')
+      ) {
+        setOvertimeMissing(true)
+      }
+      setOvertimeEntries([])
+    } else {
+      const otRows = (otData as OvertimeEntryRow[]) || []
+      setOvertimeEntries(otRows)
+
+      const otSum = new Map<string, number>()
+      for (const row of otRows) {
+        const h = Number(row.overtime_hours)
+        if (!Number.isFinite(h)) continue
+        otSum.set(row.employee_id, (otSum.get(row.employee_id) ?? 0) + h)
+      }
+
+      const missingIds = Array.from(otSum.keys()).filter((id) => !payrollMap.has(id))
+      if (missingIds.length > 0) {
+        const { data: empsMissing } = await supabase
+          .from('employees')
+          .select('id, name, hourly_rate')
+          .in('id', missingIds)
+        for (const e of empsMissing || []) {
+          payrollMap.set(e.id, {
+            employeeId: e.id,
+            employeeName: e.name,
+            hourlyRate: e.hourly_rate ?? 200,
+            recordCount: 0,
+            rawClockHoursTotal: 0,
+            billableClockHoursTotal: 0,
+            overtimeHoursTotal: otSum.get(e.id) ?? 0,
+            totalBillableHours: 0,
+            totalAmount: 0,
+          })
+        }
+      }
+
+      Array.from(otSum.entries()).forEach(([eid, sumOt]) => {
+        const rowData = payrollMap.get(eid)
+        if (rowData) rowData.overtimeHoursTotal = sumOt
       })
     }
 
+    details.sort((a, b) => {
+      if (a.workDate !== b.workDate) return b.workDate.localeCompare(a.workDate)
+      return a.employeeName.localeCompare(b.employeeName, 'zh-Hant')
+    })
+
     setPayrollData(Array.from(payrollMap.values()).map(normalizePayrollRow))
+    setDetailRows(details)
     setLoading(false)
+  }, [selectedMonth, supabase])
+
+  useEffect(() => {
+    if (!userReady) return
+    calculatePayroll()
+  }, [selectedMonth, userReady, calculatePayroll])
+
+  const reloadOvertimeOnly = async () => {
+    const [year, month] = selectedMonth.split('-').map(Number)
+    const startDate = new Date(year, month - 1, 1)
+    const endDate = endOfMonth(startDate)
+    const startStr = format(startDate, 'yyyy-MM-dd')
+    const endStr = format(endDate, 'yyyy-MM-dd')
+    const { data, error } = await supabase
+      .from('payroll_overtime_entries')
+      .select('id, employee_id, work_date, overtime_hours, notes, employees(name)')
+      .gte('work_date', startStr)
+      .lte('work_date', endStr)
+      .order('work_date', { ascending: false })
+    if (!error && data) setOvertimeEntries(data as OvertimeEntryRow[])
+    await calculatePayroll()
+  }
+
+  const addOvertime = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!otEmployeeId) return
+    const h = parseFloat(otHours.replace(',', '.'))
+    if (!Number.isFinite(h) || h <= 0) {
+      alert('請輸入大於 0 的加班時數')
+      return
+    }
+    setOtSaving(true)
+    const { error } = await supabase.from('payroll_overtime_entries').insert({
+      employee_id: otEmployeeId,
+      work_date: otWorkDate,
+      overtime_hours: h,
+      notes: otNotes.trim() || null,
+    })
+    setOtSaving(false)
+    if (error) {
+      if (error.message?.includes('does not exist')) {
+        alert('請先在 Supabase 執行 migration_payroll_overtime.sql')
+      } else {
+        alert(error.message)
+      }
+      return
+    }
+    setOtNotes('')
+    setOtHours('1')
+    await reloadOvertimeOnly()
+  }
+
+  const deleteOvertime = async (id: string) => {
+    if (!confirm('確定刪除此筆加班登記？')) return
+    const { error } = await supabase.from('payroll_overtime_entries').delete().eq('id', id)
+    if (error) {
+      alert(error.message)
+      return
+    }
+    await reloadOvertimeOnly()
+  }
+
+  const downloadPayrollExcel = () => {
+    const [year, month] = selectedMonth.split('-').map(Number)
+    const monthLabel = format(new Date(year, month - 1, 1), 'yyyy年MM月', { locale: zhTW })
+
+    const sheetDetail = detailRows.map((r) => ({
+      員工: r.employeeName,
+      日期: r.workDate,
+      上班打卡: r.clockInDisplay,
+      下班打卡: r.clockOutDisplay,
+      資料來源: r.source === 'clock' ? '打卡' : '排班',
+      原始時數: Number(formatRawHoursDisplay(r.rawHours)),
+      計薪時數整數: r.billableHours,
+    }))
+
+    const sheetOt = overtimeEntries.map((r) => {
+      const emp = r.employees
+      const name = Array.isArray(emp) ? emp[0]?.name : emp?.name
+      return {
+        員工: name || '—',
+        日期: r.work_date,
+        加班時數: Number(r.overtime_hours),
+        備註: r.notes || '',
+      }
+    })
+
+    const sheetSummary = payrollData.map((d) => ({
+      員工: d.employeeName,
+      時薪: d.hourlyRate,
+      出勤天數: d.recordCount,
+      原始總時數打卡: Number(formatRawHoursDisplay(d.rawClockHoursTotal)),
+      計薪時數打卡加總: d.billableClockHoursTotal,
+      加班時數加總: d.overtimeHoursTotal,
+      總計薪時數: d.totalBillableHours,
+      薪資金額: d.totalAmount,
+    }))
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetDetail), '逐日明細')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetOt), '加班登記')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetSummary), '月彙總')
+    XLSX.writeFile(wb, `薪資報表_${monthLabel}.xlsx`)
   }
 
   const generateMonthOptions = () => {
     const options = []
     const currentDate = new Date()
-    
     for (let i = 0; i < 24; i++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
       const value = format(date, 'yyyy-MM')
       const label = format(date, 'yyyy年MM月', { locale: zhTW })
       options.push({ value, label })
     }
-    
     return options
   }
 
@@ -170,13 +447,17 @@ export default function PayrollPage() {
 
   const totalAmount = payrollData.reduce((sum, data) => sum + data.totalAmount, 0)
 
+  const otEmployeeName = (r: OvertimeEntryRow) => {
+    const emp = r.employees
+    return Array.isArray(emp) ? emp[0]?.name : emp?.name
+  }
+
   if (!userReady) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50">載入中...</div>
   }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 md:pb-0">
-      {/* 頂部導航 */}
       <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 sm:h-16">
@@ -196,7 +477,6 @@ export default function PayrollPage() {
       </header>
 
       <div className="flex">
-        {/* 側邊導航 - 桌面版 */}
         <aside className="hidden md:block w-64 bg-white shadow-sm min-h-[calc(100vh-64px)] shrink-0">
           <nav className="p-4 space-y-2">
             {MANAGER_NAV_ITEMS.map((item) => {
@@ -220,32 +500,51 @@ export default function PayrollPage() {
           </nav>
         </aside>
 
-        {/* 主內容區 */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+          <div className="max-w-5xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900">薪資計算</h2>
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="選擇月份" />
-                </SelectTrigger>
-                <SelectContent>
-                  {generateMonthOptions().map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="選擇月份" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {generateMonthOptions().map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={loading || (payrollData.length === 0 && overtimeEntries.length === 0)}
+                  onClick={downloadPayrollExcel}
+                >
+                  <Download className="h-4 w-4" />
+                  下載 Excel
+                </Button>
+              </div>
             </div>
+
+            {overtimeMissing ? (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                尚未建立加班表：請在 Supabase 執行{' '}
+                <code className="text-xs bg-amber-100 px-1 rounded">migration_payroll_overtime.sql</code>
+                後重新整理。
+              </p>
+            ) : null}
 
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle className="flex items-center justify-between gap-2 flex-wrap">
                   <span>薪資明細</span>
                   {!loading && payrollData.length > 0 && (
                     <span className="text-sm font-normal text-gray-500">
-                      {dataSource === 'clock' ? '依打卡' : '依排班'}
+                      {dataSource === 'clock' ? '依打卡' : '依排班'} · 計薪為每日整數小時
                     </span>
                   )}
                 </CardTitle>
@@ -255,31 +554,57 @@ export default function PayrollPage() {
                   <div className="text-center py-8 text-gray-500">載入中...</div>
                 ) : payrollData.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    {selectedMonth} 尚無排班或打卡資料
+                    {selectedMonth} 尚無排班、打卡或加班資料
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="overflow-x-auto">
-                      <table className="w-full">
+                      <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left py-3 px-4 font-medium text-gray-900">員工姓名</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">時薪</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">出勤天數</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-900">總時數</th>
-                            <th className="text-right py-3 px-4 font-medium text-gray-900">總金額</th>
+                            <th className="text-left py-3 px-2 font-medium text-gray-900">員工</th>
+                            <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
+                              時薪
+                            </th>
+                            <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
+                              天數
+                            </th>
+                            <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
+                              原始時數
+                            </th>
+                            <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
+                              計薪時數
+                            </th>
+                            <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
+                              加班
+                            </th>
+                            <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
+                              總計薪
+                            </th>
+                            <th className="text-right py-3 px-2 font-medium text-gray-900">金額</th>
                           </tr>
                         </thead>
                         <tbody>
                           {payrollData.map((data) => (
                             <tr key={data.employeeId} className="border-b last:border-0">
-                              <td className="py-3 px-4 font-medium">{data.employeeName}</td>
-                              <td className="text-center py-3 px-4 text-gray-600">${data.hourlyRate}</td>
-                              <td className="text-center py-3 px-4 text-gray-600">{data.recordCount}</td>
-                              <td className="text-center py-3 px-4 font-medium">
-                                {data.totalHours.toFixed(1)} 小時
+                              <td className="py-3 px-2 font-medium">{data.employeeName}</td>
+                              <td className="text-center py-3 px-2 text-gray-600">${data.hourlyRate}</td>
+                              <td className="text-center py-3 px-2 text-gray-600">{data.recordCount}</td>
+                              <td className="text-center py-3 px-2 text-gray-600">
+                                {formatRawHoursDisplay(data.rawClockHoursTotal)} 小時
                               </td>
-                              <td className="text-right py-3 px-4 font-bold text-green-600">
+                              <td className="text-center py-3 px-2 font-medium text-gray-900">
+                                {data.billableClockHoursTotal} 小時
+                              </td>
+                              <td className="text-center py-3 px-2 text-gray-700">
+                                {data.overtimeHoursTotal > 0
+                                  ? `${formatRawHoursDisplay(data.overtimeHoursTotal)} 小時`
+                                  : '—'}
+                              </td>
+                              <td className="text-center py-3 px-2 font-semibold">
+                                {formatRawHoursDisplay(data.totalBillableHours)} 小時
+                              </td>
+                              <td className="text-right py-3 px-2 font-bold text-green-600">
                                 ${data.totalAmount.toLocaleString()}
                               </td>
                             </tr>
@@ -287,28 +612,133 @@ export default function PayrollPage() {
                         </tbody>
                         <tfoot>
                           <tr className="bg-gray-50">
-                            <td colSpan={4} className="text-right py-4 px-4 font-bold text-gray-900">
+                            <td colSpan={7} className="text-right py-4 px-2 font-bold text-gray-900">
                               總計
                             </td>
-                            <td className="text-right py-4 px-4 font-bold text-green-600 text-lg">
+                            <td className="text-right py-4 px-2 font-bold text-green-600 text-lg">
                               ${totalAmount.toLocaleString()}
                             </td>
                           </tr>
                         </tfoot>
                       </table>
                     </div>
-                    
-                    <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                      <h4 className="font-medium text-blue-900 mb-2">計算說明</h4>
-                      <ul className="text-sm text-blue-800 space-y-1">
-                        <li>• <strong>依打卡</strong>：該月份有打卡紀錄時，以實際上/下班時數計算</li>
-                        <li>• <strong>依排班</strong>：該月份無打卡時，改以排班表（早/晚/全日/自訂時段）計算</li>
-                        <li>• 可選擇過去 24 個月進行每月分析</li>
+
+                    <div className="p-4 bg-blue-50 rounded-lg space-y-2 text-sm text-blue-900">
+                      <h4 className="font-medium">計算說明</h4>
+                      <ul className="text-blue-800 space-y-1 list-disc pl-4">
                         <li>
-                          • 時薪：每位員工可在員工管理設定 $200～$250 之間任一整數（例如 210、215、218）
+                          <strong>依打卡</strong>：該月有下班打卡時，以每日（上班〜下班）換算<strong>原始時數</strong>；<strong>
+                            計薪時數
+                          </strong>
+                          為該日原始時數<strong>無條件捨去</strong>至<strong>整數小時</strong>後，再於當月加總。
+                        </li>
+                        <li>
+                          <strong>依排班</strong>：無打卡時改以排班時數為原始時數，同樣每日先捨去再加總。
+                        </li>
+                        <li>
+                          <strong>加班</strong>：由店長另行登記，<strong>與正班相同時薪</strong>；計入「總計薪」與金額。
+                        </li>
+                        <li>
+                          時薪於<strong>員工管理</strong>設定（預設 $200）。
                         </li>
                       </ul>
                     </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">加班登記（店長代填）</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <form onSubmit={addOvertime} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                  <div className="space-y-2">
+                    <Label>員工</Label>
+                    <Select value={otEmployeeId} onValueChange={setOtEmployeeId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="選擇員工" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employeesList.map((em) => (
+                          <SelectItem key={em.id} value={em.id}>
+                            {em.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ot-date">日期</Label>
+                    <Input
+                      id="ot-date"
+                      type="date"
+                      value={otWorkDate}
+                      onChange={(e) => setOtWorkDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ot-hours">加班時數</Label>
+                    <Input
+                      id="ot-hours"
+                      type="number"
+                      step="0.5"
+                      min={0.5}
+                      value={otHours}
+                      onChange={(e) => setOtHours(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+                    <Label htmlFor="ot-notes">備註（選填）</Label>
+                    <Input
+                      id="ot-notes"
+                      value={otNotes}
+                      onChange={(e) => setOtNotes(e.target.value)}
+                      placeholder="例：活動支援"
+                    />
+                  </div>
+                  <Button type="submit" disabled={otSaving || overtimeMissing}>
+                    {otSaving ? '儲存中…' : '新增'}
+                  </Button>
+                </form>
+
+                {overtimeEntries.length === 0 ? (
+                  <p className="text-sm text-gray-500">本月尚無加班登記。</p>
+                ) : (
+                  <div className="overflow-x-auto border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="text-left py-2 px-3">日期</th>
+                          <th className="text-left py-2 px-3">員工</th>
+                          <th className="text-center py-2 px-3">時數</th>
+                          <th className="text-left py-2 px-3">備註</th>
+                          <th className="w-20"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overtimeEntries.map((r) => (
+                          <tr key={r.id} className="border-b last:border-0">
+                            <td className="py-2 px-3 whitespace-nowrap">{r.work_date}</td>
+                            <td className="py-2 px-3">{otEmployeeName(r) || '—'}</td>
+                            <td className="py-2 px-3 text-center">{r.overtime_hours}</td>
+                            <td className="py-2 px-3 text-gray-600">{r.notes || '—'}</td>
+                            <td className="py-2 px-3">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600"
+                                onClick={() => deleteOvertime(r.id)}
+                              >
+                                刪除
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </CardContent>
@@ -317,7 +747,6 @@ export default function PayrollPage() {
         </main>
       </div>
 
-      {/* 底部導航 - 手機版 */}
       <nav className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t shadow-lg z-40">
         <div className="flex justify-around items-stretch h-16 overflow-x-auto">
           {MANAGER_NAV_ITEMS.map((item) => {
