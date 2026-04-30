@@ -89,6 +89,28 @@ function calcHours(start: string, end: string): number {
   return Math.round((endM - startM) / 6) / 10 // 精確到 0.1 小時
 }
 
+/** 排序用：開始時間 → 結束時間（同開始則較早結束在前，規則 A）→ id */
+function scheduleSortMinutes(schedule: Schedule): { start: number; end: number } {
+  const st = schedule.start_time?.trim()
+  const en = schedule.end_time?.trim()
+  const timeOk = (t: string | undefined) => !!t && /^\d{1,2}:\d{2}$/.test(t)
+  if (timeOk(st) && timeOk(en)) {
+    return { start: parseTimeToMinutes(st!), end: parseTimeToMinutes(en!) }
+  }
+  const preset =
+    schedule.shift_type === 'morning'
+      ? { start: '12:00', end: '17:00' }
+      : schedule.shift_type === 'evening'
+        ? { start: '19:00', end: '23:00' }
+        : schedule.shift_type === 'full'
+          ? { start: '11:30', end: '23:30' }
+          : null
+  if (preset) {
+    return { start: parseTimeToMinutes(preset.start), end: parseTimeToMinutes(preset.end) }
+  }
+  return { start: 24 * 60, end: 24 * 60 }
+}
+
 export default function SchedulePage() {
   const pathname = usePathname()
   const router = useRouter()
@@ -202,9 +224,14 @@ export default function SchedulePage() {
   }
 
   const getSchedulesForDate = (date: Date) => {
-    return schedules.filter(schedule => 
-      isSameDay(new Date(schedule.work_date), date)
-    )
+    const rows = schedules.filter((schedule) => isSameDay(new Date(schedule.work_date), date))
+    return [...rows].sort((a, b) => {
+      const ka = scheduleSortMinutes(a)
+      const kb = scheduleSortMinutes(b)
+      if (ka.start !== kb.start) return ka.start - kb.start
+      if (ka.end !== kb.end) return ka.end - kb.end
+      return a.id.localeCompare(b.id)
+    })
   }
 
   const getScheduleDisplay = (schedule: Schedule) => {
