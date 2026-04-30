@@ -22,8 +22,10 @@ import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
 import {
   billableHoursFromRaw,
+  formatDurationZhFromRawHours,
   formatRawHoursDisplay,
   rawHoursFromClock,
+  snapBillableClockSumToHalfHour,
 } from '@/lib/payrollCompute'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { zhTW } from 'date-fns/locale'
@@ -36,7 +38,7 @@ interface PayrollData {
   recordCount: number
   /** 打卡原始時數加總（小數） */
   rawClockHoursTotal: number
-  /** 打卡計薪：每日 ⌊原始⌋ 再加總 */
+  /** 打卡計薪：每日「整點 +（零頭≥30分→+0.5）」再加總 */
   billableClockHoursTotal: number
   overtimeHoursTotal: number
   /** 計薪打卡 + 加班 */
@@ -78,11 +80,13 @@ const shiftHours: Record<string, number> = {
 function normalizePayrollRow(d: PayrollData): PayrollData {
   const rawClockHoursTotal = Math.round(d.rawClockHoursTotal * 100) / 100
   const overtimeHoursTotal = Math.round(d.overtimeHoursTotal * 100) / 100
-  const totalBillableHours = d.billableClockHoursTotal + overtimeHoursTotal
+  const billableClockHoursTotal = snapBillableClockSumToHalfHour(d.billableClockHoursTotal)
+  const totalBillableHours = billableClockHoursTotal + overtimeHoursTotal
   const totalAmount = Math.round(totalBillableHours * d.hourlyRate)
   return {
     ...d,
     rawClockHoursTotal,
+    billableClockHoursTotal,
     overtimeHoursTotal,
     totalBillableHours,
     totalAmount,
@@ -387,8 +391,9 @@ export default function PayrollPage() {
       上班打卡: r.clockInDisplay,
       下班打卡: r.clockOutDisplay,
       資料來源: r.source === 'clock' ? '打卡' : '排班',
-      原始時數: Number(formatRawHoursDisplay(r.rawHours)),
-      計薪時數整數: r.billableHours,
+      時長說明: formatDurationZhFromRawHours(r.rawHours),
+      原始時數十進位小時: Number(formatRawHoursDisplay(r.rawHours)),
+      計薪時數: r.billableHours,
     }))
 
     const sheetOt = overtimeEntries.map((r) => {
@@ -544,7 +549,7 @@ export default function PayrollPage() {
                   <span>薪資明細</span>
                   {!loading && payrollData.length > 0 && (
                     <span className="text-sm font-normal text-gray-500">
-                      {dataSource === 'clock' ? '依打卡' : '依排班'} · 計薪為每日整數小時
+                      {dataSource === 'clock' ? '依打卡' : '依排班'} · 計薪：每日零頭 ≥30 分加 0.5 小時
                     </span>
                   )}
                 </CardTitle>
@@ -570,7 +575,7 @@ export default function PayrollPage() {
                               天數
                             </th>
                             <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
-                              原始時數
+                              原始（時）
                             </th>
                             <th className="text-center py-3 px-2 font-medium text-gray-900 whitespace-nowrap">
                               計薪時數
@@ -591,10 +596,13 @@ export default function PayrollPage() {
                               <td className="text-center py-3 px-2 text-gray-600">${data.hourlyRate}</td>
                               <td className="text-center py-3 px-2 text-gray-600">{data.recordCount}</td>
                               <td className="text-center py-3 px-2 text-gray-600">
-                                {formatRawHoursDisplay(data.rawClockHoursTotal)} 小時
+                                <span className="block">{formatRawHoursDisplay(data.rawClockHoursTotal)}</span>
+                                <span className="text-xs text-gray-500">
+                                  （{formatDurationZhFromRawHours(data.rawClockHoursTotal)}）
+                                </span>
                               </td>
                               <td className="text-center py-3 px-2 font-medium text-gray-900">
-                                {data.billableClockHoursTotal} 小時
+                                {formatRawHoursDisplay(data.billableClockHoursTotal, 1)} 小時
                               </td>
                               <td className="text-center py-3 px-2 text-gray-700">
                                 {data.overtimeHoursTotal > 0
@@ -627,13 +635,14 @@ export default function PayrollPage() {
                       <h4 className="font-medium">計算說明</h4>
                       <ul className="text-blue-800 space-y-1 list-disc pl-4">
                         <li>
-                          <strong>依打卡</strong>：該月有下班打卡時，以每日（上班〜下班）換算<strong>原始時數</strong>；<strong>
-                            計薪時數
-                          </strong>
-                          為該日原始時數<strong>無條件捨去</strong>至<strong>整數小時</strong>後，再於當月加總。
+                          <strong>原始時數（十進位）</strong>：總工作分鐘 ÷ 60，報表另附「時長說明（幾小時幾分）」輔助閱讀。
                         </li>
                         <li>
-                          <strong>依排班</strong>：無打卡時改以排班時數為原始時數，同樣每日先捨去再加總。
+                          <strong>依打卡・計薪時數</strong>：該日換算為「整數小時 H + 零頭分鐘 R」；若{' '}
+                          <strong>R ≥ 30 分</strong>則再加 <strong>0.5</strong> 小時，否則不加；每日計薪後於當月加總。
+                        </li>
+                        <li>
+                          <strong>依排班</strong>：無打卡時以排班時數為原始時數，套用<strong>相同規則</strong>後再加總。
                         </li>
                         <li>
                           <strong>加班</strong>：由店長另行登記，<strong>與正班相同時薪</strong>；計入「總計薪」與金額。
