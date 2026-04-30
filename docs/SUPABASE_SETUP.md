@@ -116,4 +116,5 @@ END $$;
 
 店長後台「**薪資計算**」的**加班登記**與報表匯入前，請在 SQL Editor 執行 **`supabase/migration_payroll_overtime.sql`**。
 
-須已存在 `employees` 與 `update_updated_at_column`（與 `migration_clock_records.sql` 相同前提）。
+須已存在 `employees` 與 `update_updated_at_column`（與 `migration_clock_records.sql` 相同前提）。  
+本檔可**重複執行**（policy 會先 `DROP IF EXISTS` 再建立）；若先前已建好表僅因重跑而出現 policy 已存在錯誤，請改用目前版本腳本整份再執行一次即可。

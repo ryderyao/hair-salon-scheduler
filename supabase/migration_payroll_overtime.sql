@@ -22,14 +22,23 @@ CREATE TRIGGER update_payroll_overtime_entries_updated_at
 
 ALTER TABLE payroll_overtime_entries ENABLE ROW LEVEL SECURITY;
 
+-- 可重複執行：policy 已存在時先 DROP 再 CREATE（避免 42710）
+DROP POLICY IF EXISTS "Allow authenticated users to read payroll_overtime_entries"
+  ON payroll_overtime_entries;
 CREATE POLICY "Allow authenticated users to read payroll_overtime_entries"
   ON payroll_overtime_entries FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to insert payroll_overtime_entries"
+  ON payroll_overtime_entries;
 CREATE POLICY "Allow authenticated users to insert payroll_overtime_entries"
   ON payroll_overtime_entries FOR INSERT TO authenticated WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to update payroll_overtime_entries"
+  ON payroll_overtime_entries;
 CREATE POLICY "Allow authenticated users to update payroll_overtime_entries"
   ON payroll_overtime_entries FOR UPDATE TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to delete payroll_overtime_entries"
+  ON payroll_overtime_entries;
 CREATE POLICY "Allow authenticated users to delete payroll_overtime_entries"
   ON payroll_overtime_entries FOR DELETE TO authenticated USING (true);
