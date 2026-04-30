@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
@@ -14,8 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Calendar, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw } from 'lucide-react'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
+import { Calendar, LogOut, ChevronLeft, ChevronRight, Trash2, Clock, RefreshCw, Copy, Eraser } from 'lucide-react'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfDay, max, isSameDay, addMonths, subMonths, getDay, isWeekend } from 'date-fns'
+import { mapWorkDateByWeekOrdinal, scheduleDuplicateKey } from '@/lib/scheduleCopyWeekOrdinal'
 import { SiteBrand } from '@/components/SiteBrand'
 import { clearAdminSessionKeys } from '@/lib/adminSession'
 import { MANAGER_NAV_ITEMS } from '@/lib/managerNav'
@@ -104,6 +105,29 @@ export default function SchedulePage() {
   const [customEndTime, setCustomEndTime] = useState('13:00')
   const [addScheduleLoading, setAddScheduleLoading] = useState(false)
   const [addScheduleError, setAddScheduleError] = useState<string | null>(null)
+
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false)
+  const [copyMode, setCopyMode] = useState<'fill' | 'replace'>('fill')
+  const [copyRunning, setCopyRunning] = useState(false)
+
+  const [clearMonthDialogOpen, setClearMonthDialogOpen] = useState(false)
+  const [clearMonthRunning, setClearMonthRunning] = useState(false)
+
+  /** 目前檢視月份中「允許一鍵清空」的日期區間：不含今天之前的日期（已發生的班表不刪）。 */
+  const clearableMonthRange = useMemo(() => {
+    const today0 = startOfDay(new Date())
+    const mStart = startOfMonth(currentMonth)
+    const mEnd = endOfMonth(currentMonth)
+    if (today0 > mEnd) return null
+    return { rangeStart: max([today0, mStart]), rangeEnd: mEnd }
+  }, [currentMonth])
+
+  const clearableScheduleCount = useMemo(() => {
+    if (!clearableMonthRange) return 0
+    const rs = format(clearableMonthRange.rangeStart, 'yyyy-MM-dd')
+    const re = format(clearableMonthRange.rangeEnd, 'yyyy-MM-dd')
+    return schedules.filter((s) => s.work_date >= rs && s.work_date <= re).length
+  }, [schedules, clearableMonthRange])
 
   useEffect(() => {
     fetchEmployees()
@@ -244,6 +268,141 @@ export default function SchedulePage() {
     fetchSchedules()
   }
 
+  const handleCopyPreviousMonthWeekOrdinal = async () => {
+    if (!isAdmin) return
+    const sourceMonth = subMonths(currentMonth, 1)
+    const srcStart = format(startOfMonth(sourceMonth), 'yyyy-MM-dd')
+    const srcEnd = format(endOfMonth(sourceMonth), 'yyyy-MM-dd')
+    const tgtStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd')
+    const tgtEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
+
+    if (copyMode === 'replace') {
+      const ok = window.confirm(
+        `將先刪除「${format(currentMonth, 'yyyy年MM月', { locale: zhTW })}」的全部排班，再依上個月複製。\n此動作無法復原，確定繼續？`
+      )
+      if (!ok) return
+    }
+
+    setCopyRunning(true)
+    try {
+      const { data: sourceRows, error: srcErr } = await supabase
+        .from('schedules')
+        .select('employee_id, work_date, shift_type, start_time, end_time, hours')
+        .gte('work_date', srcStart)
+        .lte('work_date', srcEnd)
+
+      if (srcErr) throw srcErr
+      if (!sourceRows?.length) {
+        window.alert('上個月沒有任何排班可複製。')
+        return
+      }
+
+      if (copyMode === 'replace') {
+        const { error: delErr } = await supabase
+          .from('schedules')
+          .delete()
+          .gte('work_date', tgtStart)
+          .lte('work_date', tgtEnd)
+        if (delErr) throw delErr
+      }
+
+      const existing = new Set<string>()
+      if (copyMode === 'fill') {
+        const { data: exRows, error: exErr } = await supabase
+          .from('schedules')
+          .select('employee_id, work_date, shift_type, start_time, end_time')
+          .gte('work_date', tgtStart)
+          .lte('work_date', tgtEnd)
+        if (exErr) throw exErr
+        for (const r of exRows || []) {
+          existing.add(scheduleDuplicateKey(r))
+        }
+      }
+
+      const targetMonthStart = startOfMonth(currentMonth)
+      const inserts: {
+        employee_id: string
+        work_date: string
+        shift_type: string
+        start_time: string | null
+        end_time: string | null
+        hours: number | null
+      }[] = []
+      let skipNoMap = 0
+      let skipDup = 0
+
+      for (const row of sourceRows) {
+        const newDate = mapWorkDateByWeekOrdinal(row.work_date, targetMonthStart)
+        if (!newDate) {
+          skipNoMap++
+          continue
+        }
+        const payload = {
+          employee_id: row.employee_id,
+          work_date: newDate,
+          shift_type: row.shift_type,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          hours: row.hours,
+        }
+        if (copyMode === 'fill') {
+          const k = scheduleDuplicateKey(payload)
+          if (existing.has(k)) {
+            skipDup++
+            continue
+          }
+        }
+        inserts.push(payload)
+      }
+
+      const chunkSize = 80
+      let inserted = 0
+      for (let i = 0; i < inserts.length; i += chunkSize) {
+        const chunk = inserts.slice(i, i + chunkSize)
+        const { error: insErr } = await supabase.from('schedules').insert(chunk)
+        if (insErr) throw insErr
+        inserted += chunk.length
+      }
+
+      setCopyDialogOpen(false)
+      fetchSchedules()
+      window.alert(
+        `複製完成：新增 ${inserted} 筆。\n略過（該月無對應星期序）${skipNoMap} 筆；略過（已有相同班）${skipDup} 筆。`
+      )
+    } catch (e: unknown) {
+      console.error(e)
+      window.alert(e instanceof Error ? e.message : '複製失敗')
+    } finally {
+      setCopyRunning(false)
+    }
+  }
+
+  const handleClearFutureSchedulesInViewMonth = async () => {
+    if (!isAdmin || !clearableMonthRange || clearableScheduleCount === 0) return
+
+    const rs = format(clearableMonthRange.rangeStart, 'yyyy-MM-dd')
+    const re = format(clearableMonthRange.rangeEnd, 'yyyy-MM-dd')
+    const ok = window.confirm(
+      `即將刪除「${format(currentMonth, 'yyyy年MM月', { locale: zhTW })}」內、${format(clearableMonthRange.rangeStart, 'M/d', { locale: zhTW })} 至 ${format(clearableMonthRange.rangeEnd, 'M/d', { locale: zhTW })} 的排班共 ${clearableScheduleCount} 筆。\n` +
+        `今日之前的日期不會刪除。此動作無法復原，確定嗎？`
+    )
+    if (!ok) return
+
+    setClearMonthRunning(true)
+    try {
+      const { error } = await supabase.from('schedules').delete().gte('work_date', rs).lte('work_date', re)
+      if (error) throw error
+      setClearMonthDialogOpen(false)
+      fetchSchedules()
+      window.alert(`已清空 ${clearableScheduleCount} 筆未來／當日排班（已過日期保留）。`)
+    } catch (e: unknown) {
+      console.error(e)
+      window.alert(e instanceof Error ? e.message : '清空失敗')
+    } finally {
+      setClearMonthRunning(false)
+    }
+  }
+
   const handleDeleteSchedule = async (scheduleId: string) => {
     const { error } = await supabase
       .from('schedules')
@@ -331,7 +490,43 @@ export default function SchedulePage() {
           <div className="max-w-6xl mx-auto w-full">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900">排班</h2>
-              <div className="flex items-center justify-between sm:justify-end space-x-4">
+              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 sm:gap-4">
+                {isAdmin ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="gap-1.5 shrink-0"
+                      onClick={() => setCopyDialogOpen(true)}
+                    >
+                      <Copy className="h-4 w-4" />
+                      複製上月
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 shrink-0 text-red-700 border-red-200 hover:bg-red-50"
+                      disabled={
+                        !clearableMonthRange ||
+                        clearableScheduleCount === 0 ||
+                        clearMonthRunning
+                      }
+                      title={
+                        !clearableMonthRange
+                          ? '此月份已全部過去，不提供一鍵清空（避免誤刪歷史班表）'
+                          : clearableScheduleCount === 0
+                            ? '本月（今天起）沒有可清空的排班'
+                            : undefined
+                      }
+                      onClick={() => setClearMonthDialogOpen(true)}
+                    >
+                      <Eraser className="h-4 w-4" />
+                      清空本月
+                    </Button>
+                  </>
+                ) : null}
                 <Button
                   variant="outline"
                   size="icon"
@@ -568,6 +763,141 @@ export default function SchedulePage() {
             </Button>
             <Button onClick={handleAddSchedule} disabled={!selectedEmployee || !selectedShift || addScheduleLoading} className="w-full sm:w-auto">
               {addScheduleLoading ? '新增中...' : '新增'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 管理者：清空目前月份（僅今天含以後，已過日期保留） */}
+      <Dialog open={clearMonthDialogOpen} onOpenChange={setClearMonthDialogOpen}>
+        <DialogContent className="mx-3 sm:mx-4 w-[calc(100%-24px)] max-w-lg">
+          <DialogHeader>
+            <DialogTitle>清空本月排班</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground pt-1">
+                <p>
+                  目標月份：<strong>{format(currentMonth, 'yyyy年MM月', { locale: zhTW })}</strong>
+                </p>
+                {clearableMonthRange ? (
+                  <>
+                    <p>
+                      將刪除區間：
+                      <strong>
+                        {' '}
+                        {format(clearableMonthRange.rangeStart, 'yyyy/MM/dd', { locale: zhTW })} —{' '}
+                        {format(clearableMonthRange.rangeEnd, 'yyyy/MM/dd', { locale: zhTW })}
+                      </strong>
+                      （依伺服器／瀏覽器<strong>本地日期</strong>的「今天」起算）
+                    </p>
+                    <p>
+                      <strong>今日之前的日期一律不刪除</strong>
+                      ，避免誤清已發生班表；若要改過去的紀錄請在月曆上逐筆點刪除。
+                    </p>
+                    <p className="text-foreground font-medium">
+                      預計刪除：<strong>{clearableScheduleCount}</strong> 筆
+                    </p>
+                  </>
+                ) : (
+                  <p>此月份已全部過去，不提供一鍵清空。</p>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setClearMonthDialogOpen(false)}
+              disabled={clearMonthRunning}
+              className="w-full sm:w-auto"
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleClearFutureSchedulesInViewMonth}
+              disabled={
+                clearMonthRunning ||
+                !clearableMonthRange ||
+                clearableScheduleCount === 0
+              }
+              className="w-full sm:w-auto"
+            >
+              {clearMonthRunning ? '清空中…' : '確認清空'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 管理者：複製上月（星期序對齊） */}
+      <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
+        <DialogContent className="mx-3 sm:mx-4 w-[calc(100%-24px)] max-w-lg">
+          <DialogHeader>
+            <DialogTitle>複製上月班表</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground pt-1">
+                <p>
+                  來源：<strong>{format(subMonths(currentMonth, 1), 'yyyy年MM月', { locale: zhTW })}</strong>
+                  {' → '}
+                  目標：<strong>{format(currentMonth, 'yyyy年MM月', { locale: zhTW })}</strong>
+                </p>
+                <p>
+                  規則：上個月的每一天會對應到本月<strong>同一個「第幾個星期幾」</strong>
+                  （例如上月第一個週六 → 本月第一個週六）。若本月沒有第五個同名星期等情況則略過該筆。
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <label className="flex items-start gap-3 cursor-pointer text-sm">
+              <input
+                type="radio"
+                name="copy-schedule-mode"
+                checked={copyMode === 'fill'}
+                onChange={() => setCopyMode('fill')}
+                className="mt-1"
+              />
+              <span>
+                <strong>僅填入空白</strong>
+                <span className="block text-muted-foreground text-xs mt-0.5">
+                  已存在相同員工、同日、同班別與同自訂時段者略過。
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer text-sm">
+              <input
+                type="radio"
+                name="copy-schedule-mode"
+                checked={copyMode === 'replace'}
+                onChange={() => setCopyMode('replace')}
+                className="mt-1"
+              />
+              <span>
+                <strong>先清空目標月再複製</strong>
+                <span className="block text-muted-foreground text-xs mt-0.5">
+                  會刪除目標月全部排班後再貼上，請謹慎使用。
+                </span>
+              </span>
+            </label>
+          </div>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCopyDialogOpen(false)}
+              disabled={copyRunning}
+              className="w-full sm:w-auto"
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCopyPreviousMonthWeekOrdinal}
+              disabled={copyRunning}
+              className="w-full sm:w-auto"
+            >
+              {copyRunning ? '處理中…' : '開始複製'}
             </Button>
           </DialogFooter>
         </DialogContent>
