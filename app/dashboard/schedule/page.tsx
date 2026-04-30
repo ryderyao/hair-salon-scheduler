@@ -52,8 +52,27 @@ const shiftLabels: Record<string, string> = {
 const shiftColors: Record<string, string> = {
   morning: 'bg-yellow-100 text-yellow-800 border-yellow-200',
   evening: 'bg-blue-100 text-blue-800 border-blue-200',
-  full: 'bg-green-100 text-green-800 border-green-200',
+  full: 'bg-teal-100 text-teal-800 border-teal-300',
   custom: 'bg-purple-100 text-purple-800 border-purple-200',
+}
+
+/** 假日預設時段（存成 custom）在月曆上的配色 */
+function calendarShiftClass(schedule: Schedule): string {
+  if (
+    schedule.shift_type === 'custom' &&
+    schedule.start_time === '11:30' &&
+    schedule.end_time === '19:00'
+  ) {
+    return 'bg-amber-100 text-amber-900 border-amber-300'
+  }
+  if (
+    schedule.shift_type === 'custom' &&
+    schedule.start_time === '19:00' &&
+    schedule.end_time === '23:30'
+  ) {
+    return 'bg-indigo-100 text-indigo-900 border-indigo-300'
+  }
+  return shiftColors[schedule.shift_type] || 'bg-gray-100 text-gray-800 border-gray-200'
 }
 
 // 解析時間字串 "HH:mm" 為分鐘數
@@ -197,7 +216,11 @@ export default function SchedulePage() {
 
   const getAvailableShifts = (date: Date) => {
     const preset = isWeekend(date)
-      ? [{ value: 'full', label: '全日班 11:30-23:30 (12hr)' }]
+      ? [
+          { value: 'weekend_am', label: '假日早段 11:30-19:00 (7.5hr)' },
+          { value: 'weekend_pm', label: '假日晚段 19:00-23:30 (4.5hr)' },
+          { value: 'full', label: '全日班 (假日) 11:30-23:30 (12hr)' },
+        ]
       : [
           { value: 'morning', label: '早班 12:00-17:00 (5hr)' },
           { value: 'evening', label: '晚班 19:00-23:00 (4hr)' },
@@ -223,6 +246,8 @@ export default function SchedulePage() {
     let endTime: string
     let hours: number
 
+    let shiftTypeToSave: Schedule['shift_type']
+
     if (selectedShift === 'custom') {
       const hrs = calcHours(customStartTime, customEndTime)
       if (hrs <= 0) {
@@ -232,6 +257,17 @@ export default function SchedulePage() {
       startTime = customStartTime
       endTime = customEndTime
       hours = hrs
+      shiftTypeToSave = 'custom'
+    } else if (selectedShift === 'weekend_am') {
+      startTime = '11:30'
+      endTime = '19:00'
+      hours = calcHours(startTime, endTime)
+      shiftTypeToSave = 'custom'
+    } else if (selectedShift === 'weekend_pm') {
+      startTime = '19:00'
+      endTime = '23:30'
+      hours = calcHours(startTime, endTime)
+      shiftTypeToSave = 'custom'
     } else {
       const preset = selectedShift === 'morning' ? { start: '12:00', end: '17:00', hours: 5 }
         : selectedShift === 'evening' ? { start: '19:00', end: '23:00', hours: 4 }
@@ -239,6 +275,7 @@ export default function SchedulePage() {
       startTime = preset.start
       endTime = preset.end
       hours = preset.hours
+      shiftTypeToSave = selectedShift as Schedule['shift_type']
     }
 
     setAddScheduleError(null)
@@ -249,7 +286,7 @@ export default function SchedulePage() {
       .insert([{
         employee_id: selectedEmployee,
         work_date: format(selectedDate, 'yyyy-MM-dd'),
-        shift_type: selectedShift,
+        shift_type: shiftTypeToSave,
         start_time: startTime,
         end_time: endTime,
         hours,
@@ -561,7 +598,15 @@ export default function SchedulePage() {
                     <span>晚班 (平日) 19:00-23:00</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-100 border border-green-200 rounded shrink-0"></div>
+                    <div className="w-3 h-3 sm:w-4 sm:h-4 bg-amber-100 border border-amber-300 rounded shrink-0"></div>
+                    <span>假日早段 11:30-19:00</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 sm:w-4 sm:h-4 bg-indigo-100 border border-indigo-300 rounded shrink-0"></div>
+                    <span>假日晚段 19:00-23:30</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 sm:w-4 sm:h-4 bg-teal-100 border border-teal-300 rounded shrink-0"></div>
                     <span>全日班 (假日) 11:30-23:30</span>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -610,7 +655,7 @@ export default function SchedulePage() {
                           {daySchedules.map((schedule) => (
                             <div
                               key={schedule.id}
-                              className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border ${shiftColors[schedule.shift_type] || 'bg-gray-100'} flex justify-between items-center gap-0.5 ${isAdmin ? 'cursor-pointer' : ''}`}
+                              className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border ${calendarShiftClass(schedule)} flex justify-between items-center gap-0.5 ${isAdmin ? 'cursor-pointer' : ''}`}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 if (isAdmin) handleDeleteSchedule(schedule.id)
@@ -714,7 +759,18 @@ export default function SchedulePage() {
                     onClick={() => setSelectedShift(shift.value)}
                     className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all touch-manipulation whitespace-nowrap ${
                       selectedShift === shift.value
-                        ? 'ring-2 ring-offset-2 ' + (shift.value === 'morning' ? 'bg-yellow-100 text-yellow-900 ring-yellow-300' : shift.value === 'evening' ? 'bg-blue-100 text-blue-900 ring-blue-300' : shift.value === 'full' ? 'bg-green-100 text-green-900 ring-green-300' : 'bg-purple-100 text-purple-900 ring-purple-300')
+                        ? 'ring-2 ring-offset-2 ' +
+                            (shift.value === 'morning'
+                              ? 'bg-yellow-100 text-yellow-900 ring-yellow-300'
+                              : shift.value === 'evening'
+                                ? 'bg-blue-100 text-blue-900 ring-blue-300'
+                                : shift.value === 'full'
+                                  ? 'bg-teal-100 text-teal-900 ring-teal-300'
+                                  : shift.value === 'weekend_am'
+                                    ? 'bg-amber-100 text-amber-950 ring-amber-400'
+                                    : shift.value === 'weekend_pm'
+                                      ? 'bg-indigo-100 text-indigo-950 ring-indigo-400'
+                                      : 'bg-purple-100 text-purple-900 ring-purple-300')
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
                     }`}
                   >
