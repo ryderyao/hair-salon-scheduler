@@ -34,7 +34,7 @@ interface PayrollData {
   employeeId: string
   employeeName: string
   hourlyRate: number
-  /** 有打卡或排班紀錄的天數 */
+  /** 有效打卡天數（須已打下班） */
   recordCount: number
   /** 打卡原始時數加總（小數） */
   rawClockHoursTotal: number
@@ -54,7 +54,6 @@ interface PayrollDetailRow {
   clockOutDisplay: string
   rawHours: number
   billableHours: number
-  source: 'clock' | 'schedule'
 }
 
 interface OvertimeEntryRow {
@@ -69,12 +68,6 @@ interface OvertimeEntryRow {
 interface EmployeeOption {
   id: string
   name: string
-}
-
-const shiftHours: Record<string, number> = {
-  morning: 5,
-  evening: 4,
-  full: 12,
 }
 
 function normalizePayrollRow(d: PayrollData): PayrollData {
@@ -101,7 +94,6 @@ export default function PayrollPage() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [payrollData, setPayrollData] = useState<PayrollData[]>([])
   const [detailRows, setDetailRows] = useState<PayrollDetailRow[]>([])
-  const [dataSource, setDataSource] = useState<'clock' | 'schedule'>('clock')
   const [loading, setLoading] = useState(false)
   const [userReady, setUserReady] = useState(false)
   const [overtimeMissing, setOvertimeMissing] = useState(false)
@@ -178,84 +170,31 @@ export default function PayrollPage() {
       .lte('work_date', endStr)
       .not('clock_out_at', 'is', null)
 
-    if (records && records.length > 0) {
-      setDataSource('clock')
-      records.forEach(
-        (rec: {
-          employee_id: string
-          work_date: string
-          clock_in_at: string
-          clock_out_at: string | null
-          employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[]
-        }) => {
-          if (!rec.clock_out_at) return
-          const employeeId = rec.employee_id
-          const emp = rec.employees
-          const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
-          const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
-          const raw = rawHoursFromClock(rec.clock_in_at, rec.clock_out_at)
-          const bill = billableHoursFromRaw(raw)
+    for (const rec of records || []) {
+      if (!rec.clock_out_at) continue
+      const employeeId = rec.employee_id
+      const emp = rec.employees as
+        | { name: string; hourly_rate?: number }
+        | { name: string; hourly_rate?: number }[]
+      const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
+      const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
+      const raw = rawHoursFromClock(rec.clock_in_at, rec.clock_out_at)
+      const bill = billableHoursFromRaw(raw)
 
-          const data = ensureEmployee(employeeId, employeeName, hourlyRate)
-          data.recordCount++
-          data.rawClockHoursTotal += raw
-          data.billableClockHoursTotal += bill
+      const data = ensureEmployee(employeeId, employeeName, hourlyRate)
+      data.recordCount++
+      data.rawClockHoursTotal += raw
+      data.billableClockHoursTotal += bill
 
-          details.push({
-            employeeId,
-            employeeName,
-            workDate: rec.work_date,
-            clockInDisplay: format(new Date(rec.clock_in_at), 'yyyy-MM-dd HH:mm'),
-            clockOutDisplay: format(new Date(rec.clock_out_at), 'yyyy-MM-dd HH:mm'),
-            rawHours: raw,
-            billableHours: bill,
-            source: 'clock',
-          })
-        }
-      )
-    } else {
-      setDataSource('schedule')
-      const { data: schedules } = await supabase
-        .from('schedules')
-        .select(`employee_id, work_date, shift_type, hours, employees(name, hourly_rate)`)
-        .gte('work_date', startStr)
-        .lte('work_date', endStr)
-
-      schedules?.forEach(
-        (s: {
-          employee_id: string
-          work_date: string
-          shift_type: string
-          hours?: number
-          employees: { name: string; hourly_rate?: number } | { name: string; hourly_rate?: number }[]
-        }) => {
-          const employeeId = s.employee_id
-          const emp = s.employees
-          const employeeName = Array.isArray(emp) ? emp[0]?.name : (emp?.name ?? '')
-          const hourlyRate = (Array.isArray(emp) ? emp[0]?.hourly_rate : emp?.hourly_rate) ?? 200
-          const hours =
-            s.shift_type === 'custom' && typeof s.hours === 'number'
-              ? s.hours
-              : (shiftHours[s.shift_type] ?? 0)
-          const bill = billableHoursFromRaw(hours)
-
-          const data = ensureEmployee(employeeId, employeeName, hourlyRate)
-          data.recordCount++
-          data.rawClockHoursTotal += hours
-          data.billableClockHoursTotal += bill
-
-          details.push({
-            employeeId,
-            employeeName,
-            workDate: s.work_date,
-            clockInDisplay: '—',
-            clockOutDisplay: '—',
-            rawHours: hours,
-            billableHours: bill,
-            source: 'schedule',
-          })
-        }
-      )
+      details.push({
+        employeeId,
+        employeeName,
+        workDate: rec.work_date,
+        clockInDisplay: format(new Date(rec.clock_in_at), 'yyyy-MM-dd HH:mm'),
+        clockOutDisplay: format(new Date(rec.clock_out_at), 'yyyy-MM-dd HH:mm'),
+        rawHours: raw,
+        billableHours: bill,
+      })
     }
 
     const { data: otData, error: otError } = await supabase
@@ -284,27 +223,6 @@ export default function PayrollPage() {
         otSum.set(row.employee_id, (otSum.get(row.employee_id) ?? 0) + h)
       }
 
-      const missingIds = Array.from(otSum.keys()).filter((id) => !payrollMap.has(id))
-      if (missingIds.length > 0) {
-        const { data: empsMissing } = await supabase
-          .from('employees')
-          .select('id, name, hourly_rate')
-          .in('id', missingIds)
-        for (const e of empsMissing || []) {
-          payrollMap.set(e.id, {
-            employeeId: e.id,
-            employeeName: e.name,
-            hourlyRate: e.hourly_rate ?? 200,
-            recordCount: 0,
-            rawClockHoursTotal: 0,
-            billableClockHoursTotal: 0,
-            overtimeHoursTotal: otSum.get(e.id) ?? 0,
-            totalBillableHours: 0,
-            totalAmount: 0,
-          })
-        }
-      }
-
       Array.from(otSum.entries()).forEach(([eid, sumOt]) => {
         const rowData = payrollMap.get(eid)
         if (rowData) rowData.overtimeHoursTotal = sumOt
@@ -316,7 +234,11 @@ export default function PayrollPage() {
       return a.employeeName.localeCompare(b.employeeName, 'zh-Hant')
     })
 
-    setPayrollData(Array.from(payrollMap.values()).map(normalizePayrollRow))
+    setPayrollData(
+      Array.from(payrollMap.values())
+        .map(normalizePayrollRow)
+        .sort((a, b) => a.employeeName.localeCompare(b.employeeName, 'zh-Hant'))
+    )
     setDetailRows(details)
     setLoading(false)
   }, [selectedMonth, supabase])
@@ -390,7 +312,7 @@ export default function PayrollPage() {
       日期: r.workDate,
       上班打卡: r.clockInDisplay,
       下班打卡: r.clockOutDisplay,
-      資料來源: r.source === 'clock' ? '打卡' : '排班',
+      資料來源: '打卡',
       時長說明: formatDurationZhFromRawHours(r.rawHours),
       原始時數十進位小時: Number(formatRawHoursDisplay(r.rawHours)),
       計薪時數: r.billableHours,
@@ -526,7 +448,10 @@ export default function PayrollPage() {
                   type="button"
                   variant="outline"
                   className="gap-2"
-                  disabled={loading || (payrollData.length === 0 && overtimeEntries.length === 0)}
+                  disabled={
+                    loading ||
+                    (detailRows.length === 0 && overtimeEntries.length === 0)
+                  }
                   onClick={downloadPayrollExcel}
                 >
                   <Download className="h-4 w-4" />
@@ -549,7 +474,7 @@ export default function PayrollPage() {
                   <span>薪資明細</span>
                   {!loading && payrollData.length > 0 && (
                     <span className="text-sm font-normal text-gray-500">
-                      {dataSource === 'clock' ? '依打卡' : '依排班'} · 計薪：每日零頭 ≥30 分加 0.5 小時
+                      依打卡 · 計薪：每日零頭 ≥30 分加 0.5 小時 · 加班僅併入本月有打卡之員工
                     </span>
                   )}
                 </CardTitle>
@@ -558,8 +483,13 @@ export default function PayrollPage() {
                 {loading ? (
                   <div className="text-center py-8 text-gray-500">載入中...</div>
                 ) : payrollData.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    {selectedMonth} 尚無排班、打卡或加班資料
+                  <div className="text-center py-8 text-gray-500 space-y-1">
+                    <p>
+                      本月尚無有效打卡紀錄（須完成上下班打卡）；薪資明細僅列出有打卡之員工。
+                    </p>
+                    <p className="text-sm">
+                      忘記打卡請於月底前補登後重新整理。加班會與已有打卡的員工薪資合計。
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -640,12 +570,11 @@ export default function PayrollPage() {
                         <li>
                           <strong>依打卡・計薪時數</strong>：該日換算為「整數小時 H + 零頭分鐘 R」；若{' '}
                           <strong>R ≥ 30 分</strong>則再加 <strong>0.5</strong> 小時，否則不加；每日計薪後於當月加總。
+                          <strong>不依排班推估</strong>；無打卡之日不計入正班。
                         </li>
                         <li>
-                          <strong>依排班</strong>：無打卡時以排班時數為原始時數，套用<strong>相同規則</strong>後再加總。
-                        </li>
-                        <li>
-                          <strong>加班</strong>：由店長另行登記，<strong>與正班相同時薪</strong>；計入「總計薪」與金額。
+                          <strong>加班</strong>：由店長另行登記，<strong>與正班相同時薪</strong>；僅併入
+                          <strong>該月有打卡紀錄</strong>的員工，計入「總計薪」與金額。
                         </li>
                         <li>
                           時薪於<strong>員工管理</strong>設定（預設 $200）。
