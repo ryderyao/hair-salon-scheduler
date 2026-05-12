@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS clock_records (
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_clock_records_employee ON clock_records(employee_id);
 CREATE INDEX IF NOT EXISTS idx_clock_records_work_date ON clock_records(work_date);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_clock_records_employee_date 
+-- 同日可多段打卡（須先下班再打下次上班）；查詢用複合索引
+CREATE INDEX IF NOT EXISTS idx_clock_records_employee_work_date
   ON clock_records(employee_id, work_date);
 
 -- 觸發器

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
@@ -35,11 +35,11 @@ interface ClockRecord {
 type ClockTodaySectionProps = {
   currentTime: Date
   employees: Employee[]
-  todayRecords: ClockRecord[]
+  sortedTodayRecords: ClockRecord[]
   loading: boolean
   selectedEmployee: string | null
   setSelectedEmployee: (id: string | null) => void
-  getRecordForEmployee: (empId: string) => ClockRecord | undefined
+  employeeClockSubtitle: (empId: string) => string
   canClockIn: (empId: string) => boolean
   canClockOut: (empId: string) => boolean
   handleClockIn: () => void
@@ -51,11 +51,11 @@ type ClockTodaySectionProps = {
 function ClockTodaySection({
   currentTime,
   employees,
-  todayRecords,
+  sortedTodayRecords,
   loading,
   selectedEmployee,
   setSelectedEmployee,
-  getRecordForEmployee,
+  employeeClockSubtitle,
   canClockIn,
   canClockOut,
   handleClockIn,
@@ -81,10 +81,8 @@ function ClockTodaySection({
         <CardContent>
           <div className="flex flex-wrap gap-2">
             {employees.map((emp) => {
-              const rec = getRecordForEmployee(emp.id)
               const isSelected = selectedEmployee === emp.id
-              const status =
-                !rec ? '未打卡' : rec.clock_out_at ? '已完成' : '上班中'
+              const subtitle = employeeClockSubtitle(emp.id)
               return (
                 <button
                   key={emp.id}
@@ -97,7 +95,7 @@ function ClockTodaySection({
                   }`}
                 >
                   <span className="block">{emp.name}</span>
-                  <span className="text-xs text-gray-500">{status}</span>
+                  <span className="text-xs text-gray-500">{subtitle}</span>
                 </button>
               )
             })}
@@ -161,11 +159,11 @@ function ClockTodaySection({
         <CardContent>
           {loading ? (
             <div className="text-center py-6 text-gray-500">載入中...</div>
-          ) : todayRecords.length === 0 ? (
+          ) : sortedTodayRecords.length === 0 ? (
             <div className="text-center py-6 text-gray-500">尚無打卡紀錄</div>
           ) : (
             <div className="space-y-2">
-              {todayRecords.map((rec) => {
+              {sortedTodayRecords.map((rec) => {
                 const emp = rec.employees as { name: string }
                 return (
                   <div
@@ -256,7 +254,7 @@ export default function ClockPage() {
       .from('clock_records')
       .select('*, employees(name)')
       .eq('work_date', todayStr)
-      .order('clock_in_at', { ascending: false })
+      .order('clock_in_at', { ascending: true })
     if (currentUserId && currentUserId !== 'admin') {
       query = query.eq('employee_id', currentUserId)
     }
@@ -266,18 +264,47 @@ export default function ClockPage() {
     setLoading(false)
   }
 
-  const getRecordForEmployee = (empId: string) =>
-    todayRecords.find((r) => r.employee_id === empId)
+  const getSegmentsAsc = useCallback(
+    (empId: string) =>
+      todayRecords
+        .filter((r) => r.employee_id === empId)
+        .sort((a, b) => new Date(a.clock_in_at).getTime() - new Date(b.clock_in_at).getTime()),
+    [todayRecords]
+  )
 
-  const canClockIn = (empId: string) => {
-    const rec = getRecordForEmployee(empId)
-    return !rec // 今日尚無紀錄才可上班打卡
-  }
+  const getOpenSegment = useCallback((empId: string): ClockRecord | undefined => {
+    const opens = todayRecords.filter((r) => r.employee_id === empId && r.clock_out_at == null)
+    if (opens.length === 0) return undefined
+    return opens.reduce((best, r) =>
+      new Date(r.clock_in_at).getTime() > new Date(best.clock_in_at).getTime() ? r : best
+    )
+  }, [todayRecords])
 
-  const canClockOut = (empId: string) => {
-    const rec = getRecordForEmployee(empId)
-    return rec != null && rec.clock_out_at == null
-  }
+  const employeeClockSubtitle = useCallback(
+    (empId: string) => {
+      const segments = getSegmentsAsc(empId)
+      const closedCount = segments.filter((s) => s.clock_out_at != null).length
+      const open = getOpenSegment(empId)
+      if (segments.length === 0) return '未打卡'
+      if (open) return `上班中（第 ${closedCount + 1} 段）`
+      return `已完成 ${segments.length} 段`
+    },
+    [getSegmentsAsc, getOpenSegment]
+  )
+
+  const canClockIn = useCallback((empId: string) => !getOpenSegment(empId), [getOpenSegment])
+
+  const canClockOut = useCallback((empId: string) => !!getOpenSegment(empId), [getOpenSegment])
+
+  const sortedTodayRecords = useMemo(() => {
+    return [...todayRecords].sort((a, b) => {
+      const ea = (a.employees as { name: string })?.name ?? ''
+      const eb = (b.employees as { name: string })?.name ?? ''
+      const n = ea.localeCompare(eb, 'zh-Hant')
+      if (n !== 0) return n
+      return new Date(a.clock_in_at).getTime() - new Date(b.clock_in_at).getTime()
+    })
+  }, [todayRecords])
 
   const showMessage = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text })
@@ -290,7 +317,7 @@ export default function ClockPage() {
       return
     }
     if (!canClockIn(selectedEmployee)) {
-      showMessage('error', '已打上班卡，請先打下班卡')
+      showMessage('error', '目前有進行中的班次，請先打下班卡後再打上班卡')
       return
     }
 
@@ -307,7 +334,7 @@ export default function ClockPage() {
     setPunchLoading(false)
     if (error) {
       if (error.code === '23505') {
-        showMessage('error', '今日已打上班卡')
+        showMessage('error', '無法新增打卡紀錄（可能與資料限制衝突），請洽店長')
       } else {
         showMessage('error', error.message || '打卡失敗')
       }
@@ -331,13 +358,17 @@ export default function ClockPage() {
     }
 
     setPunchLoading(true)
-    const rec = getRecordForEmployee(selectedEmployee)
-    if (!rec) return
+    const open = getOpenSegment(selectedEmployee)
+    if (!open) {
+      setPunchLoading(false)
+      showMessage('error', '沒有進行中的班次可下班')
+      return
+    }
 
     const { error } = await supabase
       .from('clock_records')
       .update({ clock_out_at: new Date().toISOString() })
-      .eq('id', rec.id)
+      .eq('id', open.id)
 
     setPunchLoading(false)
     if (error) {
@@ -428,11 +459,11 @@ export default function ClockPage() {
                   <ClockTodaySection
                     currentTime={currentTime}
                     employees={employees}
-                    todayRecords={todayRecords}
+                    sortedTodayRecords={sortedTodayRecords}
                     loading={loading}
                     selectedEmployee={selectedEmployee}
                     setSelectedEmployee={setSelectedEmployee}
-                    getRecordForEmployee={getRecordForEmployee}
+                    employeeClockSubtitle={employeeClockSubtitle}
                     canClockIn={canClockIn}
                     canClockOut={canClockOut}
                     handleClockIn={handleClockIn}
@@ -455,11 +486,11 @@ export default function ClockPage() {
                   <ClockTodaySection
                     currentTime={currentTime}
                     employees={employees}
-                    todayRecords={todayRecords}
+                    sortedTodayRecords={sortedTodayRecords}
                     loading={loading}
                     selectedEmployee={selectedEmployee}
                     setSelectedEmployee={setSelectedEmployee}
-                    getRecordForEmployee={getRecordForEmployee}
+                    employeeClockSubtitle={employeeClockSubtitle}
                     canClockIn={canClockIn}
                     canClockOut={canClockOut}
                     handleClockIn={handleClockIn}

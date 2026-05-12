@@ -124,7 +124,9 @@ export function AdminClockRecordsPanel({ supabase, onRecordsChanged }: Props) {
         if (wd !== 0) return wd
         const an = (a.employees as { name: string })?.name ?? ''
         const bn = (b.employees as { name: string })?.name ?? ''
-        return an.localeCompare(bn, 'zh-Hant')
+        const nm = an.localeCompare(bn, 'zh-Hant')
+        if (nm !== 0) return nm
+        return new Date(a.clock_in_at).getTime() - new Date(b.clock_in_at).getTime()
       })
       setRows(list)
     }
@@ -185,11 +187,7 @@ export function AdminClockRecordsPanel({ supabase, onRecordsChanged }: Props) {
     setSaving(false)
 
     if (error) {
-      if (error.code === '23505') {
-        setFormError('該員工此出勤日已有打卡紀錄，請改用「編輯」修改。')
-      } else {
-        setFormError(error.message || '新增失敗')
-      }
+      setFormError(error.message || '新增失敗')
       return
     }
 
@@ -236,11 +234,7 @@ export function AdminClockRecordsPanel({ supabase, onRecordsChanged }: Props) {
     setSaving(false)
 
     if (error) {
-      if (error.code === '23505') {
-        setFormError('無法變更：該員工在選定的日期已有其他紀錄。')
-      } else {
-        setFormError(error.message || '更新失敗')
-      }
+      setFormError(error.message || '更新失敗')
       return
     }
 
